@@ -1,6 +1,6 @@
 /* GameVault service worker: Network-First for HTML, Cache-First for assets. */
-/* v1.0.3: invalida la cache anterior y deja pasar el trafico de Wikipedia/Wikimedia. */
-var CACHE = 'gamevault-v1.0.3';
+/* v1.0.4: invalida la cache anterior y deja pasar el trafico de Wikipedia/Wikimedia/Wikidata. */
+var CACHE = 'gamevault-v1.0.4';
 var ROOT = new URL('./', self.registration.scope).href;
 var PRECACHE = [
   './',
@@ -83,8 +83,8 @@ self.addEventListener('fetch', function (event) {
   var url;
   try { url = new URL(request.url); } catch (e) { return; }
 
-  /* Wikipedia/Wikimedia (API y caratulas) van directo a la red: nunca cachear ni bloquear. */
-  if (/(^|\.)(wikipedia\.org|wikimedia\.org)$/i.test(url.hostname)) return;
+  /* Wikipedia/Wikimedia/Wikidata (API, entidades y caratulas) van directo a la red. */
+  if (/(^|\.)(wikipedia\.org|wikimedia\.org|wikidata\.org)$/i.test(url.hostname)) return;
 
   if (url.origin !== self.location.origin) return;
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return;

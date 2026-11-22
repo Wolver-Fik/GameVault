@@ -112,6 +112,17 @@
   G.EVENT = EVENT;
   G.ORDER = ORDER;
   G.current = function () { return current; };
+  /* Utilidades usadas por el scraper multilingue (codigo Wikipedia/Wikidata y nombre visible). */
+  G.lang = function () { return current; };
+  G.langTag = function (code) {
+    code = code || current;
+    return ORDER.indexOf(code) !== -1 ? code : FALLBACK;
+  };
+  G.languageName = function (code) {
+    code = code || current;
+    var dict = G.locales && G.locales[code];
+    return dict && dict.name ? dict.name : code;
+  };
   G.supported = supported;
   G.detect = detect;
   G.t = t;

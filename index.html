@@ -81,6 +81,7 @@
       <option value="nombre" data-i18n="sort.name">Nombre A–Z</option>
       <option value="horas" data-i18n="sort.hours">Más horas</option>
       <option value="nota" data-i18n="sort.score">Mejor nota</option>
+      <option value="anio" data-i18n="sort.year">Año de lanzamiento</option>
     </select>
   </div>
 
@@ -92,8 +93,16 @@
     <h3 id="ed-title">Añadir juego</h3>
     <div class="form">
       <label class="lbl full"><span data-i18n="editor.title">Título</span>
-        <input class="input" id="e-title" type="text" autocomplete="off" maxlength="120">
+        <div class="title-row">
+          <input class="input" id="e-title" type="text" autocomplete="off" maxlength="120">
+          <button class="btn autofill" id="e-autofill" type="button" aria-busy="false">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M12 2.5l1.7 4.6L18.3 9l-4.6 1.7L12 15.3l-1.7-4.6L5.7 9l4.6-1.9L12 2.5z"/><path d="M18.6 14.6l.8 2.1 2.1.8-2.1.8-.8 2.1-.8-2.1-2.1-.8 2.1-.8.8-2.1z"/><path d="M5.4 16.2l.6 1.6 1.6.6-1.6.6-.6 1.6-.6-1.6-1.6-.6 1.6-.6.6-1.6z"/></svg>
+            <span class="spinner" id="e-autofill-spin" hidden aria-hidden="true"></span>
+            <span data-i18n="editor.autofill">Autocompletar ficha</span>
+          </button>
+        </div>
         <span class="err" id="e-err"></span>
+        <span class="help autofill-msg" id="e-autofill-msg" role="status" aria-live="polite" hidden></span>
       </label>
       <div class="lbl full"><span data-i18n="editor.cover">Portada</span>
         <div class="cover-row">
@@ -119,6 +128,12 @@
       <label class="lbl"><span data-i18n="editor.genre">Género</span>
         <input class="input" id="e-genre" type="text" list="dl-genre" autocomplete="off" maxlength="40" data-i18n-placeholder="editor.genrePlaceholder" placeholder="RPG, Acción...">
       </label>
+      <label class="lbl"><span data-i18n="editor.releaseDate">Año / Fecha de lanzamiento</span>
+        <input class="input" id="e-release" type="text" autocomplete="off" maxlength="30" data-i18n-placeholder="editor.releasePlaceholder" placeholder="2017 o 2022-02-25">
+      </label>
+      <label class="lbl"><span data-i18n="editor.developer">Desarrollador / Estudio</span>
+        <input class="input" id="e-dev" type="text" autocomplete="off" maxlength="80" data-i18n-placeholder="editor.developerPlaceholder" placeholder="Team Cherry, FromSoftware...">
+      </label>
       <label class="lbl"><span data-i18n="editor.status">Estado</span>
         <select class="input" id="e-status"></select>
       </label>
@@ -132,6 +147,9 @@
       <div class="lbl full"><span data-i18n="editor.score">Mi puntuación</span>
         <div class="scores" id="e-scores" role="group" data-i18n-aria="editor.scoreAria" aria-label="Puntuación del 1 al 10"></div>
       </div>
+      <label class="lbl full"><span data-i18n="editor.summary">Sinopsis</span>
+        <textarea class="input summary" id="e-summary" maxlength="300" data-i18n-placeholder="editor.summaryPlaceholder" placeholder="Descripción breve (1-2 líneas)..."></textarea>
+      </label>
       <label class="lbl full"><span data-i18n="editor.notes">Notas</span>
         <textarea class="input" id="e-notes" maxlength="600" data-i18n-placeholder="editor.notesPlaceholder" placeholder="Capítulo, misión pendiente, por qué lo dejé..."></textarea>
       </label>

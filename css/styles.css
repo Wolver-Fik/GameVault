@@ -150,6 +150,7 @@ select.field, select.input { appearance: none; background-image: linear-gradient
 .meta { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .meta .t { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .meta .g { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meta .d { color: var(--muted); font-size: 11px; opacity: .82; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; color: var(--c); }
 .pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
@@ -177,6 +178,26 @@ textarea.input { min-height: 72px; resize: vertical; }
 .hoursrow { display: flex; gap: 6px; }
 .hoursrow .input { flex: 1; }
 .hoursrow .plus { padding: 0 10px; border-radius: 10px; }
+
+/* autocompletado de ficha */
+.title-row { display: flex; align-items: stretch; gap: 8px; min-width: 0; }
+.title-row .input { flex: 1 1 auto; min-width: 0; }
+.btn.autofill { flex: none; border-color: #3c4570; background: var(--panel-2); }
+.btn.autofill svg { color: var(--accent); }
+.btn.autofill:hover:not(:disabled) { background: #242c46; border-color: var(--accent); }
+.btn.autofill:disabled { cursor: progress; opacity: .72; }
+.autofill-msg { display: block; font-size: 11px; text-transform: none; letter-spacing: 0; line-height: 1.45; }
+.autofill-msg.is-searching { color: var(--accent); }
+.autofill-msg.is-ok { color: var(--s-done); }
+.autofill-msg.is-warn { color: var(--s-pend); }
+.autofill-msg.is-error { color: var(--s-aband); }
+textarea.input.summary { min-height: 54px; }
+.spinner {
+  width: 12px; height: 12px; flex: none; display: inline-block; border-radius: 50%;
+  border: 2px solid rgba(232,235,243,.25); border-top-color: var(--accent);
+  animation: gv-spin .7s linear infinite;
+}
+@keyframes gv-spin { to { transform: rotate(360deg); } }
 .foot { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; align-items: center; }
 .foot .left { margin-right: auto; }
 .pick { display: flex; gap: 16px; align-items: center; }
@@ -230,6 +251,9 @@ textarea.mono { font-family: var(--mono); font-size: 12px; min-height: 200px; }
   .foot .btn { flex: 1; justify-content: center; }
   .foot .left { margin-right: 0; width: 100%; flex-basis: 100%; }
   .cover-row { align-items: stretch; }
+  .title-row { flex-wrap: wrap; }
+  .title-row .input { flex-basis: 100%; }
+  .btn.autofill { width: 100%; justify-content: center; }
 }
 @media (max-width: 380px) {
   .actions { grid-template-columns: 1fr; }
@@ -237,4 +261,4 @@ textarea.mono { font-family: var(--mono); font-size: 12px; min-height: 200px; }
   .stat .v { font-size: 22px; }
 }
 
-@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }

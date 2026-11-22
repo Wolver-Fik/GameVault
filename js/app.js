@@ -41,6 +41,7 @@
   var editCoverSource = '';
   var coverMsg = '';
   var coverSearchId = 0;
+  var metaSearchId = 0;
   var delArmed = false;
   var pickId = null;
   var rollToken = 0;
@@ -68,6 +69,12 @@
   function uid() {
     if (STORAGE && typeof STORAGE.uid === 'function') return STORAGE.uid();
     return 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  }
+  function splitRelease(value) {
+    if (STORAGE && typeof STORAGE.splitRelease === 'function') return STORAGE.splitRelease(value);
+    var s = String(value || '').trim().slice(0, 30);
+    var m = /(\d{4})/.exec(s);
+    return { releaseDate: s, releaseYear: m ? m[1] : '' };
   }
 
   /* ---------- plataformas y géneros multilingües ---------- */
@@ -114,20 +121,19 @@
     storageOk = !!(res && res.storageOk);
   }
 
-  /* ---------- portadas ---------- */
+  /* ---------- portadas y metadatos: Wikipedia / Wikidata (CORS con origin=*) ---------- */
   var coverCache = {};
-  var WIKI_API = {
-    en: 'https://en.wikipedia.org/w/api.php',
-    es: 'https://es.wikipedia.org/w/api.php'
-  };
+  var WIKI_LANGS = ['en', 'es', 'pt', 'fr', 'it', 'de', 'ru', 'ja'];
+  var WD_API = 'https://www.wikidata.org/w/api.php';
+  function wikiLang(code) { return WIKI_LANGS.indexOf(code) !== -1 ? code : 'en'; }
+  function wikiApi(lang) { return 'https://' + wikiLang(lang) + '.wikipedia.org/w/api.php'; }
   function coverKey(title) { return String(title || '').trim().toLowerCase(); }
 
   /* Toda peticion a MediaWiki lleva format=json y origin=* (obligatorio para CORS). */
   function wikiSearchUrl(lang, search) {
-    var base = WIKI_API[lang] || WIKI_API.en;
     var q = encodeURIComponent(String(search || '').trim()).replace(/%20/g, '+');
     /* Sin pilicense=any MediaWiki oculta las caratulas fair use (casi todos los videojuegos). */
-    return base +
+    return wikiApi(lang) +
       '?action=query' +
       '&generator=search' +
       '&gsrsearch=' + q +
@@ -138,6 +144,19 @@
       '&pilicense=any' +
       '&format=json' +
       '&origin=*';
+  }
+
+  /* Peticion comun con timeout: una API lenta no debe dejar el modal esperando para siempre. */
+  function fetchJson(url, timeout) {
+    var ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    var timer = ctl ? setTimeout(function () { ctl.abort(); }, timeout || 12000) : null;
+    var init = ctl ? { signal: ctl.signal } : undefined;
+    function done() { if (timer) clearTimeout(timer); }
+    return fetch(url, init).then(function (r) {
+      done();
+      if (!r.ok) throw new Error('http ' + r.status);
+      return r.json();
+    }).catch(function (e) { done(); throw e; });
   }
 
   function normTitle(s) {
@@ -160,27 +179,33 @@
     return common / Math.max(pw.length, ww.length) >= 0.6 ? 1 : 0;
   }
 
-  /* MediaWiki devuelve los resultados en un mapa de paginas; elegimos el mejor valido. */
-  function firstThumbnail(data, wanted) {
+  /* MediaWiki devuelve un mapa de paginas: elegimos la que mejor coincide con el titulo. */
+  function pickBestPage(data, wanted, requireThumb) {
     var pages = data && data.query && data.query.pages ? data.query.pages : null;
-    if (!pages) return '';
+    if (!pages) return null;
     var list = Object.keys(pages).map(function (k) { return pages[k]; }).filter(function (p) {
-      return p && p.thumbnail && typeof p.thumbnail.source === 'string' && !!p.thumbnail.source;
-    }).sort(function (a, b) { return (a.index || 0) - (b.index || 0); });
-    if (!list.length) return '';
-    var best = list[0], bestScore = -1;
-    list.forEach(function (p) {
-      var score = titleScore(p.title, wanted);
-      if (score > bestScore) { best = p; bestScore = score; }
+      if (!p || !p.title || p.missing !== undefined) return false;
+      if (requireThumb && !(p.thumbnail && p.thumbnail.source)) return false;
+      return true;
     });
-    return best.thumbnail.source;
+    if (!list.length) return null;
+    list.sort(function (a, b) {
+      var sa = titleScore(a.title, wanted), sb = titleScore(b.title, wanted);
+      if (sa !== sb) return sb - sa;
+      var ca = (a.thumbnail ? 1 : 0) + (a.extract ? 1 : 0) + (a.pageprops ? 1 : 0);
+      var cb = (b.thumbnail ? 1 : 0) + (b.extract ? 1 : 0) + (b.pageprops ? 1 : 0);
+      if (ca !== cb) return cb - ca;
+      return (a.index || 0) - (b.index || 0);
+    });
+    return list[0];
+  }
+  function firstThumbnail(data, wanted) {
+    var p = pickBestPage(data, wanted, true);
+    return p && p.thumbnail && p.thumbnail.source ? p.thumbnail.source : '';
   }
 
   function wikiSearch(lang, search, wanted) {
-    return fetch(wikiSearchUrl(lang, search)).then(function (r) {
-      if (!r.ok) throw new Error('http');
-      return r.json();
-    }).then(function (data) {
+    return fetchJson(wikiSearchUrl(lang, search)).then(function (data) {
       return firstThumbnail(data, wanted);
     });
   }
@@ -251,6 +276,272 @@
     reader.readAsDataURL(file);
   }
 
+  /* ---------- scraper de metadatos: Wikipedia + Wikidata, sin API key ---------- */
+
+  function encodeQ(s) { return encodeURIComponent(String(s || '').trim()).replace(/%20/g, '+'); }
+
+  /* Busqueda en Wikipedia EN: extracto, categorias, portada y entity-id de Wikidata. */
+  function wikiMetadataUrl(title) {
+    return wikiApi('en') +
+      '?action=query' +
+      '&generator=search' +
+      '&gsrsearch=' + encodeQ(String(title).trim() + ' video game') +
+      '&gsrlimit=3' +
+      '&prop=extracts|categories|pageimages|pageprops' +
+      '&exintro=1' +
+      '&explaintext=1' +
+      '&exsentences=3' +
+      '&cllimit=20' +
+      '&piprop=thumbnail' +
+      '&pithumbsize=500' +
+      '&pilicense=any' +
+      '&format=json' +
+      '&origin=*';
+  }
+  function wikiExtractUrl(lang, title) {
+    return wikiApi(lang) +
+      '?action=query' +
+      '&titles=' + encodeQ(title) +
+      '&prop=extracts' +
+      '&exintro=1' +
+      '&explaintext=1' +
+      '&exsentences=2' +
+      '&format=json' +
+      '&origin=*';
+  }
+  function wikiExtractSearchUrl(lang, title) {
+    return wikiApi(lang) +
+      '?action=query' +
+      '&generator=search' +
+      '&gsrsearch=' + encodeQ(title) +
+      '&gsrlimit=2' +
+      '&prop=extracts' +
+      '&exintro=1' +
+      '&explaintext=1' +
+      '&exsentences=2' +
+      '&format=json' +
+      '&origin=*';
+  }
+  function wikidataUrl(id, lang, full) {
+    var code = wikiLang(lang);
+    return WD_API +
+      '?action=wbgetentities' +
+      '&ids=' + encodeURIComponent(id) +
+      '&props=' + (full ? 'claims|labels|descriptions|sitelinks' : 'labels') +
+      '&languages=' + (code === 'en' ? 'en' : code + '|en') +
+      '&format=json' +
+      '&origin=*';
+  }
+
+  function firstExtract(data, wanted) {
+    var pages = data && data.query && data.query.pages ? data.query.pages : null;
+    if (!pages) return '';
+    var list = Object.keys(pages).map(function (k) { return pages[k]; }).filter(function (p) {
+      return p && p.missing === undefined && typeof p.extract === 'string' && p.extract.trim();
+    });
+    if (!list.length) return '';
+    list.sort(function (a, b) {
+      var sa = titleScore(a.title, wanted || ''), sb = titleScore(b.title, wanted || '');
+      if (sa !== sb) return sb - sa;
+      return (a.index || 0) - (b.index || 0);
+    });
+    return list[0].extract;
+  }
+
+  /* Recorta el extracto a 1-2 frases limpias sin romper abreviaturas habituales. */
+  function cleanSummary(text, maxSentences) {
+    var s = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!s) return '';
+    var chunks = s.match(/[^.!?]+(?:[.!?]+|$)/g) || [s];
+    var parts = [], i = 0;
+    while (i < chunks.length && parts.length < (maxSentences || 2)) {
+      var piece = chunks[i].trim();
+      if (!piece) { i++; continue; }
+      if (/\b(?:Dr|Mr|Mrs|Ms|St|Prof|Sr|Sra|etc|e\.g|i\.e)\.$/i.test(piece) && i + 1 < chunks.length) {
+        piece += ' ' + chunks[++i].trim();
+      }
+      parts.push(piece);
+      i++;
+    }
+    return parts.join(' ').slice(0, 300).trim();
+  }
+
+  /* Palabras clave del extracto/categorias en ingles mapeadas al selector de generos. */
+  var GENRE_HINTS = [
+    { key: 'rpg', re: /\brpg\b|\bjrpgs?\b|role[- ]playing|turn[- ]based|soulslike/i },
+    { key: 'horror', re: /horror|psychological thriller/i },
+    { key: 'fighting', re: /fighting game|\bfighters?\b|beat ['’]em up|hack and slash/i },
+    { key: 'racing', re: /racing|motorsport|driving game/i },
+    { key: 'shooter', re: /shooter|\bfps\b|bullet hell|first[- ]person|third[- ]person/i },
+    { key: 'platformer', re: /platformer|platform game|metroidvania|side[- ]scrolling|jump[- ]and[- ]run/i },
+    { key: 'puzzle', re: /puzzle|logic game|brain teaser|match[- ]three/i },
+    { key: 'strategy', re: /strategy|tactical|\brts\b|real[- ]time strategy|4x\b/i },
+    { key: 'sports', re: /sports? game|football|basketball|soccer|baseball|tennis|golf/i },
+    { key: 'simulation', re: /simulation|simulator|sandbox|farming sim|life sim/i },
+    { key: 'adventure', re: /adventure|visual novel|interactive fiction|point[- ]and[- ]click|narrative/i },
+    { key: 'action', re: /\baction\b/ },
+    { key: 'indie', re: /\bindie\b|independent game/i }
+  ];
+  function detectGenre(extract, categories) {
+    var cats = (categories || []).map(function (c) {
+      return typeof c === 'string' ? c : ((c && c.title) || '');
+    }).join(' ');
+    var text = String(extract || '') + ' ' + cats;
+    if (!text.trim()) return '';
+    for (var i = 0; i < GENRE_HINTS.length; i++) {
+      if (GENRE_HINTS[i].re.test(text)) return GENRE_HINTS[i].key;
+    }
+    return '';
+  }
+
+  function bestClaim(claims, prop) {
+    var arr = claims && claims[prop];
+    if (!arr || !arr.length) return null;
+    var pref = arr.filter(function (c) { return c && c.rank === 'preferred'; });
+    var live = arr.filter(function (c) { return c && c.rank !== 'deprecated'; });
+    var pool = pref.length ? pref : (live.length ? live : arr);
+    return pool[0] || null;
+  }
+  function claimValue(claims, prop) {
+    var c = bestClaim(claims, prop);
+    return c && c.mainsnak && c.mainsnak.datavalue ? c.mainsnak.datavalue.value : null;
+  }
+  function parseWikidate(time) {
+    var m = /^[+-](\d{1,4})-(\d{2})-(\d{2})T/.exec(String(time || ''));
+    if (!m) return '';
+    if (m[2] === '00' || m[3] === '00') return m[1];
+    return m[1] + '-' + m[2] + '-' + m[3];
+  }
+  function pickLabel(entity, lang) {
+    var labels = entity && entity.labels;
+    if (!labels) return '';
+    var a = labels[wikiLang(lang)], b = labels.en;
+    return (a && a.value) || (b && b.value) || '';
+  }
+  function pickDescription(entity, lang) {
+    var d = entity && entity.descriptions;
+    if (!d) return '';
+    var a = d[wikiLang(lang)], b = d.en;
+    return (a && a.value) || (b && b.value) || '';
+  }
+
+  /* Sinopsis en el idioma activo: sitelink -> busqueda local -> Wikidata -> extracto EN. */
+  function localizedSummary(result, lang, title) {
+    var code = wikiLang(lang);
+    var wd = result.wikidata;
+    var fallback = result.wikidataDescription || result.enSummary || '';
+    if (code === 'en') return Promise.resolve(result.enSummary || fallback);
+    var sitelink = wd && wd.sitelinks && wd.sitelinks[code + 'wiki'];
+    var stitle = sitelink && sitelink.title;
+    if (stitle) {
+      return fetchJson(wikiExtractUrl(code, stitle)).then(function (data) {
+        return cleanSummary(firstExtract(data, stitle), 2) || fallback;
+      }).catch(function () { return fallback; });
+    }
+    return fetchJson(wikiExtractSearchUrl(code, title)).then(function (data) {
+      return cleanSummary(firstExtract(data, title), 2) || fallback;
+    }).catch(function () { return fallback; });
+  }
+
+  function collectMetadata(title, lang) {
+    var result = {};
+    return fetchJson(wikiMetadataUrl(title)).then(function (data) {
+      var page = pickBestPage(data, title, false);
+      if (!page) return result;
+      if (page.thumbnail && page.thumbnail.source) result.cover = page.thumbnail.source;
+      result.genre = detectGenre(page.extract, page.categories);
+      result.enSummary = cleanSummary(page.extract, 2);
+      var qid = page.pageprops && page.pageprops.wikibase_item;
+      if (!qid || !/^Q\d+$/.test(qid)) return result;
+      return fetchJson(wikidataUrl(qid, lang, true)).then(function (payload) {
+        var entity = payload && payload.entities && payload.entities[qid];
+        if (!entity) return result;
+        result.wikidata = entity;
+        result.wikidataDescription = cleanSummary(pickDescription(entity, lang), 2);
+        var dateValue = claimValue(entity.claims, 'P577');
+        var rel = parseWikidate(dateValue && dateValue.time ? dateValue.time : dateValue);
+        if (rel) result.releaseDate = rel;
+        var dev = claimValue(entity.claims, 'P178');
+        var devId = dev && dev.id ? dev.id : '';
+        if (!/^Q\d+$/.test(devId)) return result;
+        return fetchJson(wikidataUrl(devId, lang, false)).then(function (devPayload) {
+          var studio = devPayload && devPayload.entities && devPayload.entities[devId];
+          var name = pickLabel(studio, lang);
+          if (name) result.developer = name.slice(0, 80);
+          return result;
+        }).catch(function () { return result; });
+      }).catch(function () { return result; });
+    }).then(function () {
+      return localizedSummary(result, lang, title).then(function (s) {
+        result.summary = s;
+        return result;
+      });
+    });
+  }
+
+  function showAutofillMsg(text, kind) {
+    var el = $('e-autofill-msg');
+    if (!el) return;
+    el.className = 'help autofill-msg' + (kind ? ' is-' + kind : '');
+    el.textContent = text || '';
+    el.hidden = !text;
+  }
+  function setAutofillBusy(busy) {
+    var btn = $('e-autofill'), spin = $('e-autofill-spin');
+    if (!btn) return;
+    btn.disabled = !!busy;
+    btn.setAttribute('aria-busy', busy ? 'true' : 'false');
+    if (spin) spin.hidden = !busy;
+    var label = btn.querySelector('[data-i18n]');
+    if (label) label.textContent = t(busy ? 'editor.autofillSearching' : 'editor.autofill');
+  }
+  function resetAutofillMsg() {
+    metaSearchId++;
+    setAutofillBusy(false);
+    showAutofillMsg('', '');
+  }
+  function applyMetadata(result, lang) {
+    var done = [];
+    if (result.cover) {
+      editCover = result.cover; editCoverSource = 'wiki'; coverMsg = t('editor.coverWiki');
+      renderCoverPreview();
+      done.push(t('meta.cover'));
+    }
+    if (result.genre) {
+      var glabel = displayValue('g', result.genre);
+      $('e-genre').value = glabel;
+      done.push(glabel);
+    }
+    if (result.releaseDate) { $('e-release').value = result.releaseDate; done.push(result.releaseDate); }
+    if (result.developer) { $('e-dev').value = result.developer; done.push(result.developer); }
+    if (result.summary) { $('e-summary').value = result.summary; done.push(t('meta.summary')); }
+    if (done.length) showAutofillMsg(t('editor.autofillDone', { list: done.join(', ') }), 'ok');
+    else showAutofillMsg(t('editor.autofillNothing', { lang: I.languageName ? I.languageName(lang) : lang }), 'warn');
+  }
+  function autofillMetadata() {
+    var title = $('e-title').value.trim();
+    if (!title) { $('e-err').textContent = t('editor.errTitle'); $('e-title').focus(); return; }
+    var token = ++metaSearchId;
+    var lang = I.lang ? I.lang() : I.current();
+    setAutofillBusy(true);
+    showAutofillMsg(t('editor.autofillSearching', { lang: I.languageName ? I.languageName(lang) : lang }), 'searching');
+    $('e-err').textContent = '';
+    collectMetadata(title, lang).then(function (result) {
+      if (token !== metaSearchId) return null;
+      if (result.cover) return result;
+      return fetchCoverRaw(title).then(function (src) {
+        if (src) result.cover = src;
+        return result;
+      }).catch(function () { return result; });
+    }).then(function (result) {
+      if (result && token === metaSearchId) applyMetadata(result, lang);
+    }).catch(function () {
+      if (token === metaSearchId) showAutofillMsg(t('editor.autofillError'), 'error');
+    }).then(function () {
+      if (token === metaSearchId) setAutofillBusy(false);
+    });
+  }
+
   /* ---------- portada generada ---------- */
   function hash(s) { var h = 0; for (var i = 0; i < s.length; i++) { h = (h * 31 + s.charCodeAt(i)) | 0; } return Math.abs(h); }
   function coverStyle(txt) {
@@ -277,6 +568,10 @@
     var s = state.f.sort;
     list.sort(function (a, b) {
       if (s === 'nombre') return a.title.localeCompare(b.title, localeTag());
+      if (s === 'anio') {
+        var ya = Number(a.releaseYear) || 0, yb = Number(b.releaseYear) || 0;
+        return yb - ya || a.title.localeCompare(b.title, localeTag());
+      }
       if (s === 'horas') return b.hours - a.hours;
       if (s === 'nota') return (b.score || 0) - (a.score || 0) || a.title.localeCompare(b.title, localeTag());
       return b.updated - a.updated;
@@ -386,11 +681,13 @@
 
   function cardHtml(g) {
     var st = SMAP[g.status];
+    var detail = [g.developer, g.releaseYear].filter(Boolean).join(' · ');
     return '<div class="card" data-id="' + g.id + '">' +
       '<button class="card" type="button" data-open="' + g.id + '" style="width:100%" aria-label="' + esc(t('card.editAria', { title: g.title })) + '">' +
         coverHtml(g, 'cover') +
         '<div class="meta"><span class="t" title="' + esc(g.title) + '">' + esc(g.title) + '</span>' +
-        '<span class="g">' + esc(g.genre ? displayValue('g', g.genre) : t('card.noGenre')) + '</span></div>' +
+        '<span class="g">' + esc(g.genre ? displayValue('g', g.genre) : t('card.noGenre')) + '</span>' +
+        (detail ? '<span class="d" title="' + esc(detail) + '">' + esc(detail) + '</span>' : '') + '</div>' +
       '</button>' +
       '<div class="row"><span class="pill" style="--c:' + st.color + '">' + esc(statusLabel(st)) + '</span>' +
       '<span class="row" style="gap:6px"><span class="hrs">' + fmtNum(g.hours) + ' h</span>' +
@@ -469,6 +766,9 @@
     $('e-status').value = g ? g.status : (state.f.status !== 'todos' ? state.f.status : 'pendiente');
     $('e-hours').value = g ? g.hours : 0;
     $('e-notes').value = g ? g.notes : '';
+    $('e-release').value = g ? (g.releaseDate || g.releaseYear || '') : '';
+    $('e-dev').value = g ? (g.developer || '') : '';
+    $('e-summary').value = g ? (g.summary || '') : '';
     $('e-cover-url').value = g && g.cover && /^https?:/i.test(g.cover) ? g.cover : '';
     $('e-cover-file').value = '';
     editScore = g ? g.score : null;
@@ -479,20 +779,26 @@
     buildScores();
     renderCoverPreview();
     $('e-err').textContent = '';
+    resetAutofillMsg();
     var del = $('e-del');
     del.hidden = !g;
     resetDeleteButton();
     setOverlay('ov-edit', true);
     setTimeout(function () { $('e-title').focus(); }, 0);
   }
-  function closeEditor() { coverSearchId++; setOverlay('ov-edit', false); }
+  function closeEditor() { coverSearchId++; resetAutofillMsg(); setOverlay('ov-edit', false); }
   function saveEditor() {
     var title = $('e-title').value.trim();
     if (!title) { $('e-err').textContent = t('editor.errTitle'); $('e-title').focus(); return; }
+    var rel = splitRelease($('e-release').value);
     var data = {
       title: title,
       platform: keyOf('p', $('e-plat').value.trim()),
       genre: keyOf('g', $('e-genre').value.trim()),
+      releaseDate: rel.releaseDate,
+      releaseYear: rel.releaseYear,
+      developer: $('e-dev').value.trim().slice(0, 80),
+      summary: $('e-summary').value.trim().slice(0, 300),
       status: $('e-status').value,
       hours: Math.max(0, parseFloat($('e-hours').value) || 0),
       score: editScore,
@@ -648,6 +954,12 @@
   }
   function onLanguageChange() {
     I.apply(document);
+    /* Las sinopsis de ejemplo siguen al idioma activo (los juegos del usuario no se tocan). */
+    var examplesChanged = false;
+    state.games.forEach(function (g) {
+      if (g.example && g.sampleSummaryKey) { g.summary = t(g.sampleSummaryKey); examplesChanged = true; }
+    });
+    if (examplesChanged) save();
     fillDataLists();
     renderAll();
     if (!$('ov-edit').hidden) {
@@ -660,6 +972,7 @@
       del.textContent = t(delArmed ? 'editor.deleteConfirm' : 'editor.delete');
       coverMsg = '';
       renderCoverPreview();
+      setAutofillBusy($('e-autofill').disabled);
     }
     if (!$('ov-random').hidden) roll();
     if (!$('ov-backup').hidden) resetBackupButton();
@@ -691,6 +1004,7 @@
   on('e-save', 'click', saveEditor);
   on('e-del', 'click', deleteEditorGame);
   on('e-cover-fetch', 'click', searchCover);
+  on('e-autofill', 'click', autofillMetadata);
   on('e-cover-clear', 'click', function () {
     editCover = ''; editCoverSource = ''; coverMsg = '';
     $('e-cover-url').value = '';
@@ -715,7 +1029,7 @@
       renderCoverPreview();
     });
   });
-  on('e-title', 'input', function () { coverMsg = ''; renderCoverPreview(); });
+  on('e-title', 'input', function () { coverMsg = ''; resetAutofillMsg(); renderCoverPreview(); });
 
   on('r-plat', 'change', function () { pickId = null; roll(); });
   on('r-again', 'click', roll);
