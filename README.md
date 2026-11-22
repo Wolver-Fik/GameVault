@@ -26,15 +26,6 @@ Your game collection, backlog and played hours in one place. GameVault is a free
 3. **iOS (Safari):** Share button → *Add to Home Screen*.
 4. Launch GameVault from the home screen; it works standalone and keeps the UI available offline.
 
-## Run locally
-
-```bash
-python -m http.server 8000
-# open http://localhost:8000/
-```
-
-The service worker is only registered on `https://` or `localhost`, so local files (`file://`) work but are not installable as a PWA.
-
 ## Project layout
 
 ```text
@@ -49,12 +40,6 @@ js/app.js               App logic + service worker registration
 icons/icon.svg          Vector source artwork
 icons/generate_icons.py Pillow generator for the PNG icons
 icons/icon-*.png        180/192/512 px PNG icons (any + maskable)
-```
-
-Regenerate the icons with:
-
-```bash
-python icons/generate_icons.py
 ```
 
 ## License
@@ -89,15 +74,6 @@ Tu colección de videojuegos, tu backlog y las horas jugadas en un único lugar.
 3. **iOS (Safari):** botón Compartir → *Añadir a la pantalla de inicio*.
 4. Abre GameVault desde la pantalla de inicio: funciona de forma independiente y mantiene la interfaz disponible sin conexión.
 
-### Ejecutar en local
-
-```bash
-python -m http.server 8000
-# abre http://localhost:8000/
-```
-
-El service worker solo se registra en `https://` o `localhost`; abrir el HTML con `file://` funciona, pero no permite instalar la PWA.
-
 ### Estructura
 
 ```text
@@ -112,12 +88,6 @@ js/app.js               Lógica de la app + registro del service worker
 icons/icon.svg          Arte vectorial original
 icons/generate_icons.py Generador de iconos PNG con Pillow
 icons/icon-*.png        Iconos PNG de 180/192/512 px (any + maskable)
-```
-
-Para regenerar los iconos:
-
-```bash
-python icons/generate_icons.py
 ```
 
 ### Licencia
