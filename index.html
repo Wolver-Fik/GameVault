@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>GameVault</title>
+  <meta name="description" content="GameVault: tu colección de videojuegos, backlog y horas jugadas en un único lugar.">
+  <meta name="theme-color" content="#6366F1">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="apple-touch-icon" sizes="180x180" href="./icons/icon-180.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
+  <link rel="icon" type="image/svg+xml" href="./icons/icon.svg">
+  <link rel="stylesheet" href="./css/styles.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <h1>GameVault</h1>
+      <span data-i18n="app.tagline">COLECCIÓN • BACKLOG • HORAS</span>
+    </div>
+    <div class="actions">
+      <div class="lang-pick">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.6 2.6 15.4 0 18M12 3c-2.6 2.6-2.6 15.4 0 18"/></svg>
+        <label class="sr-only" for="lang-select" data-i18n="lang.label">Idioma</label>
+        <select class="lang-select" id="lang-select" data-i18n-aria="lang.aria" aria-label="Idioma">
+          <option value="en">EN</option>
+          <option value="es" selected>ES</option>
+          <option value="pt">PT</option>
+          <option value="fr">FR</option>
+          <option value="it">IT</option>
+          <option value="de">DE</option>
+          <option value="ru">RU</option>
+          <option value="ja">JA</option>
+        </select>
+      </div>
+      <button class="btn" id="btn-random" type="button">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1" fill="currentColor"/><circle cx="15.5" cy="15.5" r="1" fill="currentColor"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg>
+        <span data-i18n="btn.random">Elegir al azar</span>
+      </button>
+      <button class="btn ghost" id="btn-backup" type="button" data-i18n="btn.backup">Copia de seguridad</button>
+      <button class="btn primary" id="btn-add" type="button">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        <span data-i18n="btn.add">Añadir juego</span>
+      </button>
+    </div>
+  </header>
+
+  <div id="notes"></div>
+
+  <section class="stats" aria-label="Resumen de la colección" data-i18n-aria="stats.aria">
+    <div class="stat"><span class="k" data-i18n="stat.games">Juegos</span><span class="v num" id="st-total">0</span><span class="s" id="st-total-s"></span></div>
+    <div class="stat"><span class="k" data-i18n="stat.hours">Horas jugadas</span><span class="v num" id="st-hours">0</span><span class="s" id="st-hours-s"></span></div>
+    <div class="stat"><span class="k" data-i18n="stat.completed">Completado</span><span class="v num" id="st-pct">0%</span><span class="s" id="st-pct-s"></span></div>
+    <div class="stat"><span class="k" data-i18n="stat.favoritePlatform">Plataforma favorita</span><span class="v" id="st-plat">—</span><span class="s" id="st-plat-s"></span></div>
+  </section>
+
+  <section class="insight">
+    <div class="panel">
+      <h2 data-i18n="panel.collection">Estado de la colección</h2>
+      <div class="stack" id="stack"></div>
+      <div class="legend" id="legend"></div>
+    </div>
+    <div class="panel">
+      <h2 data-i18n="panel.platforms">Por plataforma</h2>
+      <div class="bars" id="bars"></div>
+    </div>
+  </section>
+
+  <nav class="tabs" id="tabs" aria-label="Filtrar por estado" data-i18n-aria="tabs.aria"></nav>
+
+  <div class="toolbar">
+    <input class="field search" id="q" type="search" data-i18n-placeholder="search.placeholder" placeholder="Buscar por título  ( / )" autocomplete="off">
+    <select class="field" id="f-plat" data-i18n-aria="filter.platformAria" aria-label="Plataforma"></select>
+    <select class="field" id="f-genre" data-i18n-aria="filter.genreAria" aria-label="Género"></select>
+    <select class="field" id="f-sort" data-i18n-aria="sort.aria" aria-label="Ordenar">
+      <option value="reciente" data-i18n="sort.recent">Más recientes</option>
+      <option value="nombre" data-i18n="sort.name">Nombre A–Z</option>
+      <option value="horas" data-i18n="sort.hours">Más horas</option>
+      <option value="nota" data-i18n="sort.score">Mejor nota</option>
+    </select>
+  </div>
+
+  <main id="grid" class="grid" aria-live="polite"></main>
+</div>
+
+<div class="overlay" id="ov-edit" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="ed-title" hidden>
+    <h3 id="ed-title">Añadir juego</h3>
+    <div class="form">
+      <label class="lbl full"><span data-i18n="editor.title">Título</span>
+        <input class="input" id="e-title" type="text" autocomplete="off" maxlength="120">
+        <span class="err" id="e-err"></span>
+      </label>
+      <div class="lbl full"><span data-i18n="editor.cover">Portada</span>
+        <div class="cover-row">
+          <div class="cover-preview" id="e-cover-preview"><span class="ini">?</span></div>
+          <div class="cover-controls">
+            <div class="cover-actions">
+              <button class="btn sm" id="e-cover-fetch" type="button" data-i18n="editor.coverFetch">Buscar portada</button>
+              <label class="btn sm" for="e-cover-file" data-i18n="editor.coverUpload">Subir imagen</label>
+              <input class="file-input" id="e-cover-file" type="file" accept="image/*">
+              <button class="btn sm ghost" id="e-cover-clear" type="button" data-i18n="editor.coverRemove">Quitar</button>
+            </div>
+            <div class="hoursrow">
+              <input class="input" id="e-cover-url" type="url" data-i18n-placeholder="editor.coverUrlPlaceholder" placeholder="https://... URL de imagen" autocomplete="off">
+              <button class="btn sm" id="e-cover-url-apply" type="button" data-i18n="editor.coverUrlApply">Usar URL</button>
+            </div>
+            <span class="help" id="e-cover-msg" data-i18n="editor.coverNone">Sin portada: se mostrarán iniciales y degradado.</span>
+          </div>
+        </div>
+      </div>
+      <label class="lbl"><span data-i18n="editor.platform">Plataforma</span>
+        <input class="input" id="e-plat" type="text" list="dl-plat" autocomplete="off" maxlength="40" data-i18n-placeholder="editor.platformPlaceholder" placeholder="PC, PS5, Switch...">
+      </label>
+      <label class="lbl"><span data-i18n="editor.genre">Género</span>
+        <input class="input" id="e-genre" type="text" list="dl-genre" autocomplete="off" maxlength="40" data-i18n-placeholder="editor.genrePlaceholder" placeholder="RPG, Acción...">
+      </label>
+      <label class="lbl"><span data-i18n="editor.status">Estado</span>
+        <select class="input" id="e-status"></select>
+      </label>
+      <label class="lbl"><span data-i18n="editor.hours">Horas jugadas</span>
+        <div class="hoursrow">
+          <input class="input num" id="e-hours" type="number" min="0" step="0.5" inputmode="decimal" value="0">
+          <button class="plus" type="button" data-addh="1">+1</button>
+          <button class="plus" type="button" data-addh="5">+5</button>
+        </div>
+      </label>
+      <div class="lbl full"><span data-i18n="editor.score">Mi puntuación</span>
+        <div class="scores" id="e-scores" role="group" data-i18n-aria="editor.scoreAria" aria-label="Puntuación del 1 al 10"></div>
+      </div>
+      <label class="lbl full"><span data-i18n="editor.notes">Notas</span>
+        <textarea class="input" id="e-notes" maxlength="600" data-i18n-placeholder="editor.notesPlaceholder" placeholder="Capítulo, misión pendiente, por qué lo dejé..."></textarea>
+      </label>
+    </div>
+    <div class="foot">
+      <button class="btn danger left" id="e-del" type="button" hidden data-i18n="editor.delete">Eliminar</button>
+      <button class="btn ghost" id="e-cancel" type="button" data-i18n="editor.cancel">Cancelar</button>
+      <button class="btn primary" id="e-save" type="button" data-i18n="editor.save">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="ov-random" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="rn-title" hidden>
+    <h3 id="rn-title" data-i18n="roulette.title">¿A qué juego hoy?</h3>
+    <label class="lbl"><span data-i18n="roulette.label">Elegir entre los pendientes de</span>
+      <select class="input" id="r-plat"></select>
+    </label>
+    <div id="r-body"></div>
+    <div class="foot">
+      <button class="btn ghost" id="r-close" type="button" data-i18n="roulette.close">Cerrar</button>
+      <button class="btn" id="r-again" type="button" data-i18n="roulette.again">Otro</button>
+      <button class="btn primary" id="r-start" type="button" data-i18n="roulette.start">Empezar a jugar</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="ov-backup" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="bk-title" hidden>
+    <h3 id="bk-title" data-i18n="backup.title">Copia de seguridad</h3>
+    <p class="msg" style="margin:0" data-i18n="backup.description">Tus datos viven en este navegador. Copia este texto y guárdalo en un lugar seguro. Para pasar tu biblioteca a otro dispositivo, pégalo allá y pulsa Reemplazar.</p>
+    <textarea class="input mono" id="b-text" spellcheck="false" data-i18n-aria="backup.title" aria-label="Copia de seguridad"></textarea>
+    <div class="msg" id="b-msg"></div>
+    <div class="foot">
+      <button class="btn ghost" id="b-close" type="button" data-i18n="backup.close">Cerrar</button>
+      <button class="btn" id="b-export-json" type="button" data-i18n="backup.exportJson">Exportar JSON</button>
+      <button class="btn" id="b-export-csv" type="button" data-i18n="backup.exportCsv">Exportar CSV</button>
+      <button class="btn" id="b-copy" type="button" data-i18n="backup.copy">Copiar</button>
+      <button class="btn danger" id="b-import" type="button" data-i18n="backup.import">Reemplazar mi biblioteca con este texto</button>
+    </div>
+  </div>
+</div>
+
+<datalist id="dl-plat"></datalist>
+<datalist id="dl-genre"></datalist>
+
+<!-- Orden obligatorio: 8 diccionarios -> controlador i18n -> storage -> app -->
+<script src="./js/i18n/en.js"></script>
+<script src="./js/i18n/es.js"></script>
+<script src="./js/i18n/pt.js"></script>
+<script src="./js/i18n/fr.js"></script>
+<script src="./js/i18n/it.js"></script>
+<script src="./js/i18n/de.js"></script>
+<script src="./js/i18n/ru.js"></script>
+<script src="./js/i18n/ja.js"></script>
+<script src="./js/i18n.js"></script>
+<script src="./js/storage.js"></script>
+<script src="./js/app.js"></script>
+</body>
+</html>
