@@ -35,15 +35,18 @@
      Los launchers de PC son claves propias para que cada juego recuerde su cliente. */
   var PLATFORM_KEYS = CONSOLE_KEYS.concat(['emulator', 'retro']);
 
-  /* Catálogo canónico de géneros (v1.1.1). App.js lo consume para los chips del
+  /* Catálogo canónico de géneros (v1.2.2). App.js lo consume para los chips del
      editor, el filtro superior, el datalist, el scraper y el recomendador, así
      que no hay dos fuentes de verdad. Los subgéneros híbridos evitan etiquetas
-     duplicadas: survival_horror sustituye a survival + horror, etc. */
+     duplicadas: survival_horror sustituye a survival + horror, etc. 'other' se
+     deja al final a propósito: el orden visual se calcula por etiqueta traducida. */
   var GENRE_KEYS = ['action', 'adventure', 'action_adventure', 'rpg', 'action_rpg',
     'tactical_rpg', 'platformer', 'puzzle', 'puzzle_platformer', 'shooter', 'strategy',
     'sports', 'racing', 'horror', 'survival', 'survival_horror', 'indie', 'fighting',
     'simulation', 'sandbox', 'open_world', 'metroidvania', 'roguelike', 'soulslike',
-    'stealth', 'visual_novel', 'rhythm', 'mmo'];
+    'stealth', 'visual_novel', 'rhythm', 'mmo', 'beat_em_up', 'hack_and_slash',
+    'shoot_em_up', 'point_and_click', 'tower_defense', 'management', 'card_battler',
+    'party', 'other'];
 
   /* Acepta un array de generos o el genre:string de las versiones anteriores. */
   function genreList(value) {

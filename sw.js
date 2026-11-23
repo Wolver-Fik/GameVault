@@ -1,6 +1,6 @@
 /* GameVault service worker: Network-First for HTML, Cache-First for assets. */
-/* v1.2.1: los títulos conservan el año de desambiguación de Wikipedia y las sinopsis locales se validan contra el nombre del juego. */
-var CACHE = 'gamevault-v1.2.1';
+/* v1.2.2: sinopsis solo desde extractos reales de Wikipedia, géneros de nicho/clásicos y orden alfabético dinámico. */
+var CACHE = 'gamevault-v1.2.2';
 var ROOT = new URL('./', self.registration.scope).href;
 var PRECACHE = [
   './',

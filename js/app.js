@@ -2,8 +2,8 @@
 (function () {
   var STORAGE = window.GVStorage;
   var I = window.GVI18N;
-  var CACHE_NAME = 'gamevault-v1.2.1';
-  var RELOAD_FLAG = 'gv-cache-reload-v1.2.1';
+  var CACHE_NAME = 'gamevault-v1.2.2';
+  var RELOAD_FLAG = 'gv-cache-reload-v1.2.2';
 
   function t(key, vars) {
     if (!I || typeof I.t !== 'function') return String(key);
@@ -32,6 +32,20 @@
     it: 'it-IT', de: 'de-DE', ru: 'ru-RU', ja: 'ja-JP'
   };
   function localeTag() { return LOCALE_TAG[I.current()] || I.current(); }
+  function currentLang() { return I && typeof I.lang === 'function' ? I.lang() : I.current(); }
+  /* Orden visual de géneros por etiqueta traducida del idioma activo. "Otro"
+     (genre.other) se fuerza al final en los 8 idiomas. */
+  function sortedGenreKeys(keys) {
+    var lang = currentLang();
+    var list = (keys || GENRE_KEYS).filter(function (k, i, arr) { return arr.indexOf(k) === i; });
+    return list.sort(function (a, b) {
+      if (a === b) return 0;
+      if (a === 'other') return 1;
+      if (b === 'other') return -1;
+      var labelA = t('genre.' + a), labelB = t('genre.' + b);
+      return labelA.localeCompare(labelB, lang);
+    });
+  }
 
   var STATUS = [
     { id: 'jugando',    color: 'var(--s-play)' },
@@ -103,13 +117,15 @@
     return hasEmulatableRelease(releaseKeys);
   }
   var VIEW_KEY = (STORAGE && STORAGE.VIEW_KEY) ? STORAGE.VIEW_KEY : 'gamevault-active-view-v1';
-  /* Catálogo único de géneros definido en storage.js (v1.1.1), con fallback por si
+  /* Catálogo único de géneros definido en storage.js (v1.2.2), con fallback por si
      storage.js no se cargara; la fuente de verdad es GVStorage.GENRE_KEYS. */
   var FALLBACK_GENRE_KEYS = ['action', 'adventure', 'action_adventure', 'rpg', 'action_rpg',
     'tactical_rpg', 'platformer', 'puzzle', 'puzzle_platformer', 'shooter', 'strategy',
     'sports', 'racing', 'horror', 'survival', 'survival_horror', 'indie', 'fighting',
     'simulation', 'sandbox', 'open_world', 'metroidvania', 'roguelike', 'soulslike',
-    'stealth', 'visual_novel', 'rhythm', 'mmo'];
+    'stealth', 'visual_novel', 'rhythm', 'mmo', 'beat_em_up', 'hack_and_slash',
+    'shoot_em_up', 'point_and_click', 'tower_defense', 'management', 'card_battler',
+    'party', 'other'];
   var GENRE_KEYS = (STORAGE && Array.isArray(STORAGE.GENRE_KEYS))
     ? STORAGE.GENRE_KEYS.slice() : FALLBACK_GENRE_KEYS.slice();
 
@@ -293,6 +309,38 @@
     add('rol táctico', 'g:tactical_rpg');
     add('puzzle platformer', 'g:puzzle_platformer'); add('puzzle-platformer', 'g:puzzle_platformer');
     add('puzzle plataformas', 'g:puzzle_platformer'); add('puzzle-plataformas', 'g:puzzle_platformer');
+    /* Géneros de nicho y clásicos (v1.2.2): alias en inglés para las etiquetas
+       P136 de Wikidata, el Infobox y las categorías de Wikipedia. Las etiquetas
+       traducidas de cada idioma ya se registran arriba desde genre.*. */
+    add('beat em up', 'g:beat_em_up'); add('beat\'em up', 'g:beat_em_up');
+    add('beat \'em up', 'g:beat_em_up'); add('beat ’em up', 'g:beat_em_up');
+    add('beat-em-up', 'g:beat_em_up');
+    add('hack and slash', 'g:hack_and_slash'); add('hack n slash', 'g:hack_and_slash');
+    add('hack-and-slash', 'g:hack_and_slash');
+    add('shoot em up', 'g:shoot_em_up'); add('shoot\'em up', 'g:shoot_em_up');
+    add('shoot \'em up', 'g:shoot_em_up'); add('shoot ’em up', 'g:shoot_em_up');
+    add('shmup', 'g:shoot_em_up'); add('shoot-em-up', 'g:shoot_em_up');
+    add('point and click', 'g:point_and_click'); add('point & click', 'g:point_and_click');
+    add('point-and-click', 'g:point_and_click'); add('point click', 'g:point_and_click');
+    add('point and click game', 'g:point_and_click');
+    add('point-and-click game', 'g:point_and_click');
+    add('tower defense', 'g:tower_defense'); add('tower defence', 'g:tower_defense');
+    add('tower-defense', 'g:tower_defense'); add('tower defense game', 'g:tower_defense');
+    add('tower defence game', 'g:tower_defense');
+    add('management game', 'g:management'); add('management sim', 'g:management');
+    add('management simulation', 'g:management'); add('city builder', 'g:management');
+    add('city builder game', 'g:management'); add('city-building', 'g:management');
+    add('city-building game', 'g:management'); add('city building', 'g:management');
+    add('city building game', 'g:management');
+    add('card battler', 'g:card_battler'); add('card battle game', 'g:card_battler');
+    add('deckbuilder', 'g:card_battler'); add('deck builder', 'g:card_battler');
+    add('deck-building', 'g:card_battler'); add('deckbuilding', 'g:card_battler');
+    add('deck-building game', 'g:card_battler'); add('deck building', 'g:card_battler');
+    add('party game', 'g:party'); add('local multiplayer', 'g:party');
+    add('local co-op', 'g:party'); add('local coop', 'g:party');
+    add('other', 'g:other'); add('otro', 'g:other'); add('outro', 'g:other');
+    add('autre', 'g:other'); add('altro', 'g:other'); add('sonstige', 'g:other');
+    add('другое', 'g:other'); add('その他', 'g:other');
     return map;
   }
   function keyOf(kind, value) {
@@ -962,7 +1010,13 @@
     'videojuego de carreras', 'fighting game', 'videojuego de lucha',
     'simulation video game', 'videojuego de simulacion', 'indie game', 'sandbox game',
     'open world game', 'metroidvania', 'roguelike', 'stealth game', 'rhythm game',
-    'visual novel', 'novela visual', 'massively multiplayer online game', 'mmorpg'
+    'visual novel', 'novela visual', 'massively multiplayer online game', 'mmorpg',
+    'beat em up', 'beat \'em up', 'hack and slash', 'shoot em up', 'shoot \'em up',
+    'point and click game', 'point-and-click adventure game', 'tower defense',
+    'tower defence game', 'management game', 'management video game',
+    'city building game', 'city-builder game', 'card battler', 'card battle game',
+    'deckbuilder', 'deck-building game', 'party game', 'videojuego de fiesta',
+    'juego de cartas', 'gestion y construccion'
   ];
   function isGenericWikiTitle(title) {
     var n = normTitle(title);
@@ -970,11 +1024,11 @@
     /* "Videojuego de ...", "Juegos de ..." y géneros sueltos ("Action-adventure
        game") no son el artículo del juego. */
     return /^(?:videojuegos?|juegos?)\s+de\s+/.test(n) ||
-      /^(?:survival|horror|action|adventure|role[\s-]*playing|rpg|platform(?:er)?|puzzle|shooter|strategy|sports|racing|fighting|simulation|indie|sandbox|open[\s-]*world|metroidvania|roguelike|stealth|rhythm|visual[\s-]*novel)(?:\s+(?:video\s*)?games?)?$/.test(n);
+      /^(?:survival|horror|action|adventure|role[\s-]*playing|rpg|platform(?:er)?|puzzle|shooter|strategy|sports|racing|fighting|simulation|indie|sandbox|open[\s-]*world|metroidvania|roguelike|stealth|rhythm|visual[\s-]*novel|beat[\s'’]?em[\s'’]?up|hack[\s-]*and[\s-]*slash|shmup|shoot[\s'’]?em[\s'’]?up|point[\s-]*(?:and|&|&amp;)[\s-]*click|tower[\s-]*defen[cs]e|management|city[\s-]*build(?:ing|er)?|card[\s-]*battler|deck[\s-]*(?:builder|building)|party)(?:\s+(?:video\s*)?games?)?$/.test(n);
   }
   /* Como firstExtract, pero exige que la página coincida de verdad con el juego.
-     Sin artículo válido devuelve '' para que collectMetadata caiga a la
-     descripción de Wikidata en el idioma activo o al extracto limpio en inglés. */
+     Sin artículo válido devuelve '' para que collectMetadata use el extracto real
+     en inglés. Las descripciones cortas de Wikidata NUNCA son sinopsis. */
   function matchedLocalExtract(data, wanted) {
     var pages = data && data.query && data.query.pages ? data.query.pages : null;
     if (!pages) return '';
@@ -1111,6 +1165,17 @@
   /* Generos complementarios en ingles y español. Se aplican al texto ya sin
      híbridos para capturar también Shooter y Accion en un Survival Horror. */
   var GENRE_HINTS = [
+    /* Géneros de nicho/clásicos (v1.2.2): se comprueban ANTES de los genéricos
+       para que "beat 'em up" no se convierta solo en Fighting, "point & click"
+       solo en Adventure o "bullet hell" solo en Shooter. */
+    { key: 'beat_em_up', re: /\bbeat[\s'’\-]*em[\s'’\-]*up\b|\bscroll(?:ing)?[\s-]*beat\b/i },
+    { key: 'hack_and_slash', re: /\bhack[\s'’\-]*(?:and|n|&)[\s'’\-]*slash\b/i },
+    { key: 'shoot_em_up', re: /\bshoot[\s'’\-]*em[\s'’\-]*up\b|\bshmup\b|\bbullet hell\b/i },
+    { key: 'point_and_click', re: /\bpoint[\s'’\-]*(?:and|&)[\s'’\-]*click\b/i },
+    { key: 'tower_defense', re: /\btower[\s-]*defen[cs]e\b/i },
+    { key: 'management', re: /\bmanagement\b|\bcity[\s-]*build(?:ing|er|ers)\b|\bgesti[oó]n\b|\bconstrucci[oó]n\b|\bst[aä]dtebau\b/i },
+    { key: 'card_battler', re: /\bcard[\s-]*battlers?\b|\bdeck[\s-]*build(?:er|ing)\b|\bcollectible card\b|\bjuegos?\s+de\s+cartas\b/i },
+    { key: 'party', re: /\bparty\s+(?:video\s*)?games?\b|\blocal\s+multiplayer\b|\blocal\s+co-?op\b|\bjuegos?\s+de\s+fiesta\b|\bmultijugador\s+local\b/i },
     { key: 'survival', re: /survival (?:video )?games?|supervivencia/i },
     { key: 'sandbox', re: /\bsandbox\b|sandbox games?/i },
     { key: 'open_world', re: /open[- ]world(?:\s+games?)?|mundo abierto/i },
@@ -1123,15 +1188,15 @@
     { key: 'mmo', re: /massively multiplayer|mmorpgs?|\bmmos?\b/i },
     { key: 'rpg', re: /\brpgs?\b|\bjrpgs?\b|role[- ]playing|turn[- ]based|juegos? de rol/i },
     { key: 'horror', re: /horror|terror|psychological thriller/i },
-    { key: 'fighting', re: /fighting games?|\bfighters?\b|beat ['’]em up|hack and slash|peleas/i },
+    { key: 'fighting', re: /fighting games?|\bfighters?\b|peleas/i },
     { key: 'racing', re: /racing|motorsport|driving games?|carreras/i },
-    { key: 'shooter', re: /shooters?|\bfps\b|bullet hell|first[- ]person shooter|third[- ]person shooter|disparos|tiro(?:s)?/i },
+    { key: 'shooter', re: /shooters?|\bfps\b|first[- ]person shooter|third[- ]person shooter|disparos|tiro(?:s)?/i },
     { key: 'platformer', re: /platformers?|platform games?|side[- ]scrolling|jump[- ]and[- ]run|plataformas/i },
     { key: 'puzzle', re: /puzzles?|logic games?|brain teaser|match[- ]three|rompecabezas/i },
     { key: 'strategy', re: /strategy|tactical|\brts\b|real[- ]time strategy|4x\b|estrategia/i },
     { key: 'sports', re: /sports? games?|association football|football|basketball|soccer|baseball|tennis|golf|deportes/i },
     { key: 'simulation', re: /simulation|simulator|farming sim|life sim|simulaci[oó]n/i },
-    { key: 'adventure', re: /adventure games?|interactive fiction|point[- ]and[- ]click|narrative|aventura/i },
+    { key: 'adventure', re: /adventure games?|interactive fiction|narrative|aventura/i },
     { key: 'action', re: /\baction\b|\bacci[oó]n\b/i },
     { key: 'indie', re: /\bindie\b|independent games?/i }
   ];
@@ -1182,6 +1247,22 @@
     if (!d) return '';
     var a = d[wikiLang(lang)], b = d.en;
     return (a && a.value) || (b && b.value) || '';
+  }
+  /* Las descripciones cortas de Wikidata SOLO sirven para detectar sagas o
+     juegos cancelados en el recomendador. Nunca se usan como sinopsis. */
+  function allDescriptions(entity) {
+    var d = (entity && entity.descriptions) || {}, out = [];
+    Object.keys(d).forEach(function (code) {
+      if (d[code] && d[code].value) out.push(String(d[code].value));
+    });
+    return out;
+  }
+  var SERIES_CANCELLED_RE = /\b(?:video\s*games?\s+(?:series|franchise)|(?:series|franchise)\s+of\s+video\s*games?|cancelled\s+video\s*games?|canceled\s+video\s*games?|abandoned\s+video\s*games?|unreleased\s+video\s*games?|serie\s+de\s+videojuegos|franquicia\s+de\s+videojuegos|videojuegos?\s+cancelad[oa]s?|videojuegos?\s+abandonad[oa]s?)\b/i;
+  /* En el extracto se exige que el SUJETO sea la saga/cancelado ("is a ..."),
+     para no descartar un juego que solo menciona una secuela cancelada. */
+  var INTRO_SERIES_CANCELLED_RE = /\b(?:is|was|es|fue)\s+(?:a\s+)?(?:video\s*games?\s+(?:series|franchise)|cancelled\s+video\s*games?|canceled\s+video\s*games?|unreleased\s+video\s*games?|serie\s+de\s+videojuegos|videojuegos?\s+cancelad[oa]s?)\b/i;
+  function isSeriesOrCancelledText(sources) {
+    return SERIES_CANCELLED_RE.test((sources || []).map(function (s) { return String(s || ''); }).join(' · '));
   }
 
   /* ---------- plataformas del juego: P400 + Infobox/intro + remasterizaciones ---------- */
@@ -1449,7 +1530,8 @@
             var site = entity.sitelinks && entity.sitelinks[wikiLang(lang) + 'wiki'];
             return site && site.title ? site.title : '';
           })(),
-          wikidataDescription: cleanSummary(pickDescription(entity, lang), 2),
+          /* Texto de apoyo para descartar sagas/cancelados; NO es una sinopsis. */
+          descriptionText: allDescriptions(entity).join(' · '),
           platformQids: wikidataClaimIds(entity.claims, 'P400'),
           genreQids: wikidataClaimIds(entity.claims, 'P136', true),
           /* P750 "distributed by" y P123 "publisher" confirman la tienda real. */
@@ -1524,7 +1606,11 @@
       fetchCoverRaw(title).catch(function () { return ''; })                  // Portada (sin segunda fase)
     ];
     return Promise.allSettled(branches).then(function (settled) {
-      var enPage = settled[0].status === 'fulfilled' ? settled[0].value : null;
+      var enData = settled[0].status === 'fulfilled' ? settled[0].value : null;
+      var enPage = enData ? pickBestPage(enData, title, false) : null;
+      /* Solo el extracto del artículo QUE REALMENTE ES el juego vale como
+         sinopsis en inglés; un resultado de búsqueda genérico se ignora. */
+      var enPageExtract = matchedLocalExtract(enData, title);
       var wd = settled[1].status === 'fulfilled' ? settled[1].value : null;
       var localSummary = settled[2].status === 'fulfilled' ? settled[2].value : '';
       var localInfo = settled[3].status === 'fulfilled' ? settled[3].value : null;
@@ -1533,16 +1619,19 @@
 
       if (enPage) {
         if (enPage.thumbnail && enPage.thumbnail.source) result.cover = enPage.thumbnail.source;
-        result.enSummary = cleanSummary(enPage.extract, 2);
+        result.pageTitle = enPage.title || '';
+        result.pageCategories = categoriesText(enPage.categories);
+        result.pageExtract = enPageExtract || '';
+        result.enSummary = cleanSummary(enPageExtract, 2);
         var pageContent = pageSectionContent(enPage);
         var infoboxPlatforms = extractInfoboxParam(pageContent, ['platform', 'platforms', 'plataforma', 'plataformas']);
-        if (enPage.extract) result.platformTextSources.push(enPage.extract);
+        if (enPageExtract) result.platformTextSources.push(enPageExtract);
         if (infoboxPlatforms) {
           result.platformTextSources.push(infoboxPlatforms);
           result.pcPlatformTextSources.push(infoboxPlatforms);
           result.releasePlatformSources.push(infoboxPlatforms);
         }
-        result.genreSources.push(enPage.extract || '', categoriesText(enPage.categories));
+        result.genreSources.push(enPageExtract || '', result.pageCategories);
         var infoboxGenre = extractInfoboxParam(pageContent, ['genre']);
         if (infoboxGenre) result.genreSources.push(infoboxGenre);
         /* La tienda/confirmadora puede venir en el Infobox, el texto o las
@@ -1550,7 +1639,7 @@
         var infoboxStores = extractInfoboxParam(pageContent, ['publisher', 'publishers',
           'distributor', 'distributors', 'developer', 'developed by']);
         if (infoboxStores) result.storeEvidenceSources.push(infoboxStores);
-        if (enPage.extract) result.storeEvidenceSources.push(enPage.extract);
+        if (enPageExtract) result.storeEvidenceSources.push(enPageExtract);
         if (enPage.categories) result.storeEvidenceSources.push(categoriesText(enPage.categories));
       }
       if (cover && !result.cover) result.cover = cover;
@@ -1566,7 +1655,8 @@
 
       if (wd) {
         result.wikidata = wd.entity;
-        result.wikidataDescription = wd.wikidataDescription;
+        result.localTitle = wd.localTitle || '';
+        result.descriptionText = wd.descriptionText || '';
         result.releaseDate = wd.releaseDate || '';
         result.developer = wd.developer || '';
         result.platformQids = (wd.platformQids || []).slice();
@@ -1589,7 +1679,14 @@
       if (remaster.text) result.platformTextSources.push(remaster.text);
       result.genres = detectGenres(result.genreSources);
       result.genre = result.genres[0] || '';
-      result.summary = cleanSummary(localSummary, 2) || result.wikidataDescription || result.enSummary || '';
+      /* Sinopsis real: 1) extracto de Wikipedia en el idioma activo (ya validado
+         por fetchLocalSummary); 2) primeras 2 frases del extracto de Wikipedia
+         en inglés. NUNCA la descripción corta de Wikidata. */
+      result.summary = cleanSummary(localSummary, 2) || result.enSummary || '';
+      /* Señales únicamente para filtrar sagas/juegos cancelados del recomendador. */
+      result.seriesOrCancelled = isSeriesOrCancelledText([
+        result.pageTitle, result.pageCategories, result.localTitle, result.descriptionText
+      ]) || INTRO_SERIES_CANCELLED_RE.test(result.pageExtract || '');
       return result;
     });
   }
@@ -1721,7 +1818,9 @@
       var values = kind === 'p' ? [g.platform] : genresOf(g);
       values.forEach(function (v) { var k = keyOf(kind, v); if (k) m[k] = true; });
     });
-    return Object.keys(m).sort(function (a, b) { return displayValue(kind, a).localeCompare(displayValue(kind, b), localeTag()); });
+    var keys = Object.keys(m);
+    return kind === 'g' ? sortedGenreKeys(keys)
+      : keys.sort(function (a, b) { return displayValue(kind, a).localeCompare(displayValue(kind, b), localeTag()); });
   }
 
   /* ---------- render ---------- */
@@ -1796,6 +1895,8 @@
     /* Los filtros ofrecen el catalogo completo, no solo lo que haya en la biblioteca. */
     var pl = PLATFORM_KEYS.slice(), ge = GENRE_KEYS.slice();
     uniqValues('g').forEach(function (k) { if (ge.indexOf(k) === -1) ge.push(k); });
+    /* Orden alfabético dinámico por etiqueta traducida; "Otro" siempre al final. */
+    ge = sortedGenreKeys(ge);
     if (state.f.plat && pl.indexOf(state.f.plat) === -1) state.f.plat = '';
     if (state.f.genre && ge.indexOf(state.f.genre) === -1) state.f.genre = '';
     fillSelect($('f-plat'), 'p', t('filter.platform'), pl, state.f.plat);
@@ -1811,7 +1912,7 @@
     $('dl-plat').innerHTML = plats.map(function (k) {
       return '<option value="' + esc(displayValue('p', k)) + '"></option>';
     }).join('');
-    $('dl-genre').innerHTML = GENRE_KEYS.map(function (k) {
+    $('dl-genre').innerHTML = sortedGenreKeys(GENRE_KEYS).map(function (k) {
       return '<option value="' + esc(t('genre.' + k)) + '"></option>';
     }).join('');
   }
@@ -1941,7 +2042,7 @@
   function renderGenreChips() {
     var box = $('e-genres');
     if (!box) return;
-    var keys = GENRE_KEYS.filter(function (k, i) { return GENRE_KEYS.indexOf(k) === i; });
+    var keys = sortedGenreKeys(GENRE_KEYS);
     box.innerHTML = keys.map(function (k) {
       var on = editGenres.indexOf(k) !== -1;
       return '<button class="genre-chip" type="button" data-genre-toggle="' + k + '" aria-pressed="' + on + '">' + esc(t('genre.' + k)) + '</button>';
@@ -2200,7 +2301,16 @@
     stealth: ['Category:Stealth video games', 'Category:Stealth games'],
     visual_novel: ['Category:Visual novels', 'Category:Visual novel games'],
     rhythm: ['Category:Rhythm games', 'Category:Music video games'],
-    mmo: ['Category:Massively multiplayer online games', 'Category:MMORPGs']
+    mmo: ['Category:Massively multiplayer online games', 'Category:MMORPGs'],
+    /* Géneros de nicho y clásicos (v1.2.2) para sugerir también este catálogo. */
+    beat_em_up: ['Category:Beat \'em ups', 'Category:Beat-\'em-up games'],
+    hack_and_slash: ['Category:Hack and slash games', 'Category:Hack and slash video games'],
+    shoot_em_up: ['Category:Shoot \'em ups', 'Category:Shoot \'em up games'],
+    point_and_click: ['Category:Point-and-click adventure games', 'Category:Point and click adventure games'],
+    tower_defense: ['Category:Tower defense games', 'Category:Tower defence games'],
+    management: ['Category:City-building games', 'Category:Management games', 'Category:Management simulation video games'],
+    card_battler: ['Category:Deck-building games', 'Category:Collectible card games', 'Category:Digital collectible card games'],
+    party: ['Category:Party games', 'Category:Local multiplayer games']
   };
   var RECOMMEND_PLATFORM_CATEGORIES = {
     pcSteam: ['Category:Windows games', 'Category:PC games'],
@@ -2373,7 +2483,7 @@
     var s = String(title || '').trim();
     if (s.length < 3) return false;
     if (/^(Category|Wikipedia|File|Template|List):/i.test(s)) return false;
-    if (/\b(list of|video game series|series|franchise|genre|industry|development of|games developed)\b/i.test(s)) return false;
+    if (/\b(list of|video game series|series|franchise|genre|industry|development of|games developed|cancelled|canceled|unreleased)\b/i.test(s)) return false;
     var n = normTitle(s);
     if (GENRE_KEYS.some(function (k) { return normTitle(k) === n || normTitle(t('genre.' + k)) === n; })) return false;
     return true;
@@ -2440,16 +2550,24 @@
     var genresHtml = list.length
       ? '<div class="rec-tags">' + list.map(function (k) { return '<span class="gtag">' + esc(displayValue('g', k)) + '</span>'; }).join('') + '</div>'
       : esc(t('card.noGenre'));
+    /* Solo se imprimen los datos conocidos: la validación previa ya garantiza
+       portada y plataforma, y aquí evitamos además "Desconocido". */
+    var facts = '<div class="fact"><dt>' + esc(t('recommend.genres')) + '</dt><dd>' + genresHtml + '</dd></div>';
+    var platform = recommendPlatformLabel(rec);
+    if (platform && platform !== t('recommend.anyPlatform')) {
+      facts += '<div class="fact"><dt>' + esc(t('recommend.platform')) + '</dt><dd>' + esc(platform) + '</dd></div>';
+    }
+    if (rec.developer) {
+      facts += '<div class="fact"><dt>' + esc(t('recommend.developer')) + '</dt><dd>' + esc(rec.developer) + '</dd></div>';
+    }
+    if (rec.releaseDate) {
+      facts += '<div class="fact"><dt>' + esc(t('recommend.year')) + '</dt><dd>' + esc(rec.releaseDate) + '</dd></div>';
+    }
     $('rc-body').innerHTML = '<div class="pick rec-pick">' +
       coverHtml({ title: rec.title, cover: rec.cover }, 'cover') +
       '<div class="info"><h4>' + esc(rec.title) + '</h4>' +
-      '<dl class="facts">' +
-        '<div class="fact"><dt>' + esc(t('recommend.genres')) + '</dt><dd>' + genresHtml + '</dd></div>' +
-        '<div class="fact"><dt>' + esc(t('recommend.platform')) + '</dt><dd>' + esc(recommendPlatformLabel(rec)) + '</dd></div>' +
-        '<div class="fact"><dt>' + esc(t('recommend.developer')) + '</dt><dd>' + esc(rec.developer || t('recommend.unknown')) + '</dd></div>' +
-        '<div class="fact"><dt>' + esc(t('recommend.year')) + '</dt><dd>' + esc(rec.releaseDate || t('recommend.unknown')) + '</dd></div>' +
-      '</dl>' +
-      '<p class="rec-summary">' + esc(rec.summary || t('recommend.noSummary')) + '</p>' +
+      '<dl class="facts">' + facts + '</dl>' +
+      (rec.summary ? '<p class="rec-summary">' + esc(rec.summary) + '</p>' : '') +
       '</div></div>';
   }
   function finishRecommendation(result, title, token) {
@@ -2475,32 +2593,51 @@
     setRecommendBusy(false);
     return rec;
   }
+  var RECOMMEND_MAX_ATTEMPTS = 30;
+  /* Ficha mínima exhibible: portada + género + (año O desarrollador) + una
+     plataforma compatible. Así nunca aparecen "Desconocido" ni "Cualquier
+     plataforma" en la tarjeta. Las sagas/cancelados se descartan aparte. */
+  function recommendCandidateValid(result) {
+    if (!result || result.seriesOrCancelled) return false;
+    var rawGenres = (result.genres && result.genres.length) ? result.genres : (result.genre ? [result.genre] : []);
+    if (!result.cover || !compactGenres(rawGenres).length) return false;
+    var rel = splitRelease(result.releaseDate || '');
+    if (!rel.releaseYear && !result.developer) return false;
+    return compatibleOwnedPlatforms(result).length > 0;
+  }
+  function skipRecommendCandidate(list, i, token, lang, title) {
+    if (title) markSeen(title);
+    return tryRecommendCandidate(list, i + 1, token, lang);
+  }
   function tryRecommendCandidate(list, i, token, lang) {
     if (token !== recommendToken) return Promise.resolve(null);
-    if (i >= Math.min(list.length, 10)) return Promise.resolve(null);
+    if (i >= Math.min(list.length, RECOMMEND_MAX_ATTEMPTS)) return Promise.resolve(null);
     var title = cleanWikipediaTitle(list[i]);
     if (isSeen(title) || inCollection(title)) return tryRecommendCandidate(list, i + 1, token, lang);
     return collectMetadata(title, lang, false).then(function (result) {
       if (token !== recommendToken) return null;
       var useful = result && (result.cover || result.summary || result.releaseDate || result.developer ||
         (result.genres && result.genres.length));
-      if (!useful || inCollection(title)) {
-        markSeen(title);
-        return tryRecommendCandidate(list, i + 1, token, lang);
+      /* Pasa SILENCIOSAMENTE al siguiente candidato válido antes de mostrar
+         nada: ni sagas/franquicias, ni cancelados, ni fichas incompletas. */
+      if (!useful || inCollection(title) || (result && result.seriesOrCancelled)) {
+        return skipRecommendCandidate(list, i, token, lang, title);
       }
       if (!recommendPlatformCompatible(result)) {
-        markSeen(title);
-        return tryRecommendCandidate(list, i + 1, token, lang);
+        return skipRecommendCandidate(list, i, token, lang, title);
       }
-      if (result.cover) return finishRecommendation(result, title, token);
-      return fetchCoverRaw(title).then(function (src) {
+      function accept(src) {
         if (src) result.cover = src;
+        if (!recommendCandidateValid(result)) {
+          return skipRecommendCandidate(list, i, token, lang, title);
+        }
         return finishRecommendation(result, title, token);
-      }).catch(function () { return finishRecommendation(result, title, token); });
+      }
+      if (result.cover) return accept();
+      return fetchCoverRaw(title).then(accept).catch(function () { return accept(); });
     }).catch(function () {
       if (token !== recommendToken) return null;
-      markSeen(title);
-      return tryRecommendCandidate(list, i + 1, token, lang);
+      return skipRecommendCandidate(list, i, token, lang, title);
     });
   }
   function loadRecommendation(forceTitle) {
@@ -2860,7 +2997,7 @@
     navigator.serviceWorker.addEventListener('controllerchange', reloadClean);
     purgeOldCaches().then(function (purged) {
       /* La query fuerza al navegador a descargar el SW nuevo sin usar su HTTP cache. */
-      return navigator.serviceWorker.register('./sw.js?v=1.2.1', { scope: './' })
+      return navigator.serviceWorker.register('./sw.js?v=1.2.2', { scope: './' })
         .then(function (registration) {
           if (purged) setTimeout(reloadClean, 200);
           return registration.update();
