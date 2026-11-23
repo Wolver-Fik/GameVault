@@ -1,6 +1,6 @@
 /* GameVault service worker: Network-First for HTML, Cache-First for assets. */
-/* v1.2.6: selector de plataforma nativo en el editor, desplegable en móvil. */
-var CACHE = 'gamevault-v1.2.6';
+/* v1.2.7: safe areas de iOS y altura dinámica (dvh) en modo PWA standalone. */
+var CACHE = 'gamevault-v1.2.7';
 var ROOT = new URL('./', self.registration.scope).href;
 var PRECACHE = [
   './',
