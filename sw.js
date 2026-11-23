@@ -1,6 +1,6 @@
 /* GameVault service worker: Network-First for HTML, Cache-First for assets. */
-/* v1.2.7: safe areas de iOS y altura dinámica (dvh) en modo PWA standalone. */
-var CACHE = 'gamevault-v1.2.7';
+/* v1.2.8: nuevo isotipo/wordmark e iconos PWA sincronizados. */
+var CACHE = 'gamevault-v1.2.8';
 var ROOT = new URL('./', self.registration.scope).href;
 var PRECACHE = [
   './',

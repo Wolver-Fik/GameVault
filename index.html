@@ -10,7 +10,7 @@
     /* elimina de entrada cualquier cache antigua de GameVault para que no se
        sirva una versión previa del selector de plataformas. */
     (function () {
-      var CURRENT = 'gamevault-v1.2.7';
+      var CURRENT = 'gamevault-v1.2.8';
       if (!('caches' in window)) return;
       try {
         caches.keys().then(function (keys) {
@@ -34,8 +34,28 @@
 <div class="wrap">
   <header class="top">
     <div class="brand">
-      <h1>GameVault</h1>
-      <span data-i18n="app.tagline">COLECCIÓN • BACKLOG • HORAS</span>
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="gvMark" x1="8" y1="6" x2="56" y2="58" gradientUnits="userSpaceOnUse"><stop stop-color="#6366F1"/><stop offset="1" stop-color="#A855F7"/></linearGradient>
+            <radialGradient id="gvMarkGlow"><stop stop-color="#8B5CF6" stop-opacity=".45"/><stop offset="1" stop-color="#8B5CF6" stop-opacity="0"/></radialGradient>
+          </defs>
+          <circle cx="32" cy="32" r="30" fill="url(#gvMarkGlow)"/>
+          <path d="M32 4L55 17V47L32 60L9 47V17Z" fill="#171334" fill-opacity=".85" stroke="url(#gvMark)" stroke-width="4" stroke-linejoin="round"/>
+          <path d="M32 11L49 21V43L32 53L15 43V21Z" stroke="url(#gvMark)" stroke-width="1.6" stroke-opacity=".35" stroke-linejoin="round"/>
+          <rect x="21" y="18" width="9" height="24" rx="2.5" fill="url(#gvMark)"/>
+          <rect x="13.5" y="25.5" width="24" height="9" rx="2.5" fill="url(#gvMark)"/>
+          <circle cx="25.5" cy="30" r="3" fill="#141127"/>
+          <circle cx="43" cy="25" r="3.4" fill="url(#gvMark)"/>
+          <circle cx="49" cy="31" r="3.4" fill="url(#gvMark)"/>
+          <circle cx="43" cy="37" r="3.4" fill="url(#gvMark)"/>
+          <circle cx="37" cy="31" r="3.4" fill="url(#gvMark)"/>
+        </svg>
+      </span>
+      <div class="brand-copy">
+        <h1 class="wordmark">Game<strong>Vault</strong></h1>
+        <span data-i18n="app.tagline">COLECCIÓN • BACKLOG • HORAS</span>
+      </div>
     </div>
     <div class="actions">
       <div class="lang-pick">

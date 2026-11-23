@@ -1,95 +1,104 @@
-"""Generate GameVault PNG icons with Pillow.
+"""Generate the GameVault PNG icons with Pillow from icons/icon.svg.
 
-Run from the repository root:
-    python icons/generate_icons.py
-
-The artwork mirrors icons/icon.svg (gamepad + library, indigo/violet #6366F1,
-emerald #10B981, background #090D16). It is drawn at 4x and downsampled with
-LANCZOS so the 180/192/512 px files stay crisp on iOS and Android.
+Run:  python icons/generate_icons.py
+Hexagonal vault + minimal gamepad/d-pad, indigo -> violet (#6366F1 ->
+#A855F7), with a subtle inner glow. Drawn at 4x and downsampled with LANCZOS.
 """
 
 from pathlib import Path
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 
 HERE = Path(__file__).resolve().parent
-SCALE = 4
-SIZE = 512 * SCALE
+SCALE = 32  # 64 viewBox units -> 2048 px master
+N = 64 * SCALE
+BG = (13, 16, 23, 255)        # #0D1017
+INDIGO = (99, 102, 241, 255)  # #6366F1
+VIOLET = (168, 85, 247, 255)  # #A855F7
+HEX = [(32, 4), (55, 17), (55, 47), (32, 60), (9, 47), (9, 17)]
+INNER = [(32, 11), (49, 21), (49, 43), (32, 53), (15, 43), (15, 21)]
 
-BG = (9, 13, 22, 255)
-INDIGO = (99, 102, 241, 255)
-INDIGO_DARK = (79, 70, 229, 255)
-INDIGO_SHELF = (49, 46, 129, 255)
-INDIGO_LIGHT = (129, 140, 248, 255)
-EMERALD = (16, 185, 129, 255)
-LIGHT = (232, 235, 243, 255)
+
+def px(v):
+    return int(round(v * SCALE))
 
 
 def box(*values):
-    return tuple(int(v * SCALE) for v in values)
+    return tuple(px(v) for v in values)
 
 
-def rounded(draw, coords, radius, fill, outline=None, width=1):
-    draw.rounded_rectangle(
-        box(*coords),
-        radius=int(radius * SCALE),
-        fill=fill,
-        outline=outline,
-        width=max(1, int(width * SCALE)) if outline else 1,
-    )
+def gradient():
+    n = 256
+    data = bytearray()
+    for y in range(n):
+        for x in range(n):
+            t = (x + y) / (2 * (n - 1))
+            data.append(int(t * 255 + 0.5))
+    ramp = Image.frombytes("L", (n, n), bytes(data)).resize((N, N), Image.Resampling.BICUBIC)
+    return Image.composite(Image.new("RGBA", (N, N), VIOLET), Image.new("RGBA", (N, N), INDIGO), ramp)
 
 
-def ellipse(draw, coords, fill):
-    draw.ellipse(box(*coords), fill=fill)
+def apply(mask, opacity=1.0):
+    if opacity != 1.0:
+        mask = mask.point(lambda v: int(v * opacity))
+    layer = gradient()
+    layer.putalpha(mask)
+    return layer
+
+
+def polygon(draw, points, **kwargs):
+    draw.polygon([(px(x), px(y)) for x, y in points], **kwargs)
+
+
+def stroke(draw, points, width, fill=255):
+    draw.line([(px(x), px(y)) for x, y in points], fill=fill, width=px(width), joint="curve")
+    r = int(px(width) / 2)
+    for x, y in (points[0], points[-1]):
+        draw.ellipse((px(x) - r, px(y) - r, px(x) + r, px(y) + r), fill=fill)
 
 
 def artwork():
-    image = Image.new("RGBA", (SIZE, SIZE), BG)
+    image = Image.new("RGBA", (N, N), BG)
 
-    glow = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
+    glow = Image.new("RGBA", (N, N), (0, 0, 0, 0))
     gd = ImageDraw.Draw(glow)
-    ellipse(gd, (36, 18, 476, 458), (99, 102, 241, 58))
-    ellipse(gd, (86, 68, 426, 408), (99, 102, 241, 46))
-    image = Image.alpha_composite(image, glow)
-    d = ImageDraw.Draw(image)
+    gd.ellipse(box(4, 4, 60, 60), fill=(139, 92, 246, 110))
+    gd.ellipse(box(14, 14, 50, 50), fill=(139, 92, 246, 90))
+    image = Image.alpha_composite(image, glow.filter(ImageFilter.GaussianBlur(N * 0.055)))
 
-    # Library spines.
-    rounded(d, (104, 128, 150, 384), 18, INDIGO_SHELF)
-    rounded(d, (124, 150, 142, 362), 9, INDIGO_DARK)
-    rounded(d, (110, 190, 140, 198), 4, EMERALD)
-    rounded(d, (110, 240, 140, 248), 4, INDIGO_LIGHT)
-    rounded(d, (110, 290, 140, 298), 4, EMERALD)
+    rim = Image.new("L", (N, N), 0)
+    ImageDraw.Draw(rim).rounded_rectangle(box(0.5, 0.5, 63.5, 63.5), radius=px(13.5), outline=255, width=px(1))
+    image = Image.alpha_composite(image, apply(rim, 0.42))
 
-    # Gamepad body and grips.
-    rounded(d, (158, 186, 404, 326), 70, INDIGO)
-    ellipse(d, (170, 248, 262, 344), INDIGO)
-    ellipse(d, (300, 248, 392, 344), INDIGO_DARK)
-    rounded(d, (166, 194, 396, 318), 62, None, outline=(199, 210, 254, 70), width=4)
+    vault = Image.new("RGBA", (N, N), (0, 0, 0, 0))
+    polygon(ImageDraw.Draw(vault), HEX, fill=(23, 19, 52, 220))
+    image = Image.alpha_composite(image, vault)
 
-    # D-pad.
-    rounded(d, (208, 214, 236, 290), 7, BG)
-    rounded(d, (184, 238, 260, 266), 7, BG)
-    ellipse(d, (214, 244, 230, 260), EMERALD)
+    outline = Image.new("L", (N, N), 0)
+    stroke(ImageDraw.Draw(outline), HEX + [HEX[0]], 4)
+    image = Image.alpha_composite(image, apply(outline))
 
-    # Face buttons.
-    ellipse(d, (319, 219, 345, 245), EMERALD)
-    ellipse(d, (295, 247, 317, 269), LIGHT)
-    ellipse(d, (347, 247, 369, 269), LIGHT)
-    ellipse(d, (321, 273, 343, 295), LIGHT)
+    inner = Image.new("L", (N, N), 0)
+    stroke(ImageDraw.Draw(inner), INNER + [INNER[0]], 1.6, 130)
+    image = Image.alpha_composite(image, apply(inner))
 
-    # Small library detail.
-    rounded(d, (264, 226, 272, 252), 4, BG)
-    rounded(d, (280, 226, 288, 252), 4, EMERALD)
+    pad = Image.new("L", (N, N), 0)
+    d = ImageDraw.Draw(pad)
+    d.rounded_rectangle(box(21, 18, 30, 42), radius=px(2.5), fill=255)
+    d.rounded_rectangle(box(13.5, 25.5, 37.5, 34.5), radius=px(2.5), fill=255)
+    for cx, cy, r in ((43, 25, 3.4), (49, 31, 3.4), (43, 37, 3.4), (37, 31, 3.4)):
+        d.ellipse(box(cx - r, cy - r, cx + r, cy + r), fill=255)
+    image = Image.alpha_composite(image, apply(pad))
 
+    ImageDraw.Draw(image).ellipse(box(22.5, 27, 28.5, 33), fill=(20, 17, 39, 255))
     return image
 
 
 def main():
     master = artwork()
     for size in (180, 192, 512):
-        target = master.resize((size, size), Image.Resampling.LANCZOS)
         path = HERE / f"icon-{size}.png"
-        target.save(path, format="PNG", optimize=True)
+        master.resize((size, size), Image.Resampling.LANCZOS).save(path, "PNG", optimize=True)
         print(f"wrote {path.name} ({size}x{size})")
 
 

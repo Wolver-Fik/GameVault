@@ -2,8 +2,8 @@
 (function () {
   var STORAGE = window.GVStorage;
   var I = window.GVI18N;
-  var CACHE_NAME = 'gamevault-v1.2.6';
-  var RELOAD_FLAG = 'gv-cache-reload-v1.2.6';
+  var CACHE_NAME = 'gamevault-v1.2.8';
+  var RELOAD_FLAG = 'gv-cache-reload-v1.2.8';
 
   function t(key, vars) {
     if (!I || typeof I.t !== 'function') return String(key);
@@ -3356,7 +3356,7 @@
     navigator.serviceWorker.addEventListener('controllerchange', reloadClean);
     purgeOldCaches().then(function (purged) {
       /* La query fuerza al navegador a descargar el SW nuevo sin usar su HTTP cache. */
-      return navigator.serviceWorker.register('./sw.js?v=1.2.5', { scope: './' })
+      return navigator.serviceWorker.register('./sw.js?v=1.2.8', { scope: './' })
         .then(function (registration) {
           if (purged) setTimeout(reloadClean, 200);
           return registration.update();
