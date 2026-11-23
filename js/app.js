@@ -2,8 +2,8 @@
 (function () {
   var STORAGE = window.GVStorage;
   var I = window.GVI18N;
-  var CACHE_NAME = 'gamevault-v1.2.0';
-  var RELOAD_FLAG = 'gv-cache-reload-v1.2.0';
+  var CACHE_NAME = 'gamevault-v1.2.1';
+  var RELOAD_FLAG = 'gv-cache-reload-v1.2.1';
 
   function t(key, vars) {
     if (!I || typeof I.t !== 'function') return String(key);
@@ -653,12 +653,40 @@
   }
   function titleBase(s) { return normTitle(String(s || '').replace(/\([^)]*\)/g, ' ')); }
   function hasQualifier(s) { return /\([^)]*\)/.test(String(s || '')); }
+  /* Año de desambiguación de un título ("RE4 (2005 video game)" -> "2005").
+     Permite no confundir un original con su remake aunque compartan nombre. */
+  function titleYear(s) {
+    var groups = String(s || '').match(/\([^)]*\)/g) || [];
+    for (var i = 0; i < groups.length; i++) {
+      var m = /\b(?:1[0-9]{3}|20[0-9]{2})\b/.exec(groups[i]);
+      if (m) return m[0];
+    }
+    return '';
+  }
+  /* Los títulos de las categorías de Wikipedia llevan desambiguadores:
+     "Clock Tower (1996 video game)". Se eliminan "video game"/"videojuego" pero
+     se CONSERVA el año entre paréntesis: "Clock Tower (1996)". Cuando el sufijo
+     no tiene año ("(series)", "(video game)") se elimina por completo. */
+  function cleanWikipediaTitle(s) {
+    var raw = String(s || '').trim();
+    if (!raw) return '';
+    return raw.replace(/\(([^)]*)\)/g, function (whole, inner) {
+      var year = /\b(?:1[0-9]{3}|20[0-9]{2})\b/.exec(String(inner || ''));
+      return year ? '(' + year[0] + ')' : '';
+    }).replace(/\s{2,}/g, ' ').replace(/\s+([,.;:])/g, '$1').trim();
+  }
 
   /* Prioriza la pagina que realmente corresponde al juego, no solo la primera con imagen. */
   function titleScore(pageTitle, wanted) {
     var p = titleBase(pageTitle), w = titleBase(wanted);
     if (!p || !w) return 0;
-    if (p === w) return hasQualifier(pageTitle) ? 3 : 4;
+    var py = titleYear(pageTitle), wy = titleYear(wanted);
+    /* "(2005)" y "(2023)" son ediciones distintas del mismo nombre. */
+    if (py && wy && py !== wy) return 0;
+    if (p === w) {
+      if (py && wy) return 4;
+      return hasQualifier(pageTitle) ? 3 : 4;
+    }
     if (p.indexOf(w + ' ') === 0 || w.indexOf(p + ' ') === 0) return 2;
     var pw = p.split(' '), ww = w.split(' '), common = 0;
     ww.forEach(function (word) { if (pw.indexOf(word) !== -1) common++; });
@@ -797,6 +825,7 @@
       '&exintro=1' +
       '&explaintext=1' +
       '&exsentences=2' +
+      '&redirects=1' +
       '&format=json' +
       '&origin=*';
   }
@@ -917,11 +946,62 @@
       };
     }).catch(function () { return empty; });
   }
-  function fetchLocalSummary(title, lang) {
+  /* Artículos genéricos de género: MediaWiki los devuelve como primera
+     coincidencia cuando no existe una página local del juego. Nunca deben
+     convertirse en la sinopsis de una recomendación. */
+  var GENERIC_WIKI_ARTICLES = [
+    'survival horror', 'survival horror game', 'survival game', 'survival video game',
+    'horror game', 'horror video game', 'terror y supervivencia', 'horror de supervivencia',
+    'videojuego de rol', 'juego de rol', 'role playing video game', 'role playing game',
+    'action adventure game', 'action adventure video game', 'accion y aventura',
+    'videojuego de accion y aventura', 'aventura grafica', 'point and click adventure',
+    'videojuego de terror', 'videojuego de supervivencia', 'plataformas',
+    'videojuego de plataformas', 'videojuego de accion', 'videojuego de aventuras',
+    'puzzle game', 'videojuego de puzzles', 'shooter game', 'videojuego de disparos',
+    'strategy video game', 'videojuego de estrategia', 'racing video game',
+    'videojuego de carreras', 'fighting game', 'videojuego de lucha',
+    'simulation video game', 'videojuego de simulacion', 'indie game', 'sandbox game',
+    'open world game', 'metroidvania', 'roguelike', 'stealth game', 'rhythm game',
+    'visual novel', 'novela visual', 'massively multiplayer online game', 'mmorpg'
+  ];
+  function isGenericWikiTitle(title) {
+    var n = normTitle(title);
+    if (!n || GENERIC_WIKI_ARTICLES.indexOf(n) !== -1) return true;
+    /* "Videojuego de ...", "Juegos de ..." y géneros sueltos ("Action-adventure
+       game") no son el artículo del juego. */
+    return /^(?:videojuegos?|juegos?)\s+de\s+/.test(n) ||
+      /^(?:survival|horror|action|adventure|role[\s-]*playing|rpg|platform(?:er)?|puzzle|shooter|strategy|sports|racing|fighting|simulation|indie|sandbox|open[\s-]*world|metroidvania|roguelike|stealth|rhythm|visual[\s-]*novel)(?:\s+(?:video\s*)?games?)?$/.test(n);
+  }
+  /* Como firstExtract, pero exige que la página coincida de verdad con el juego.
+     Sin artículo válido devuelve '' para que collectMetadata caiga a la
+     descripción de Wikidata en el idioma activo o al extracto limpio en inglés. */
+  function matchedLocalExtract(data, wanted) {
+    var pages = data && data.query && data.query.pages ? data.query.pages : null;
+    if (!pages) return '';
+    var list = Object.keys(pages).map(function (k) { return pages[k]; }).filter(function (p) {
+      return p && p.missing === undefined && typeof p.extract === 'string' && p.extract.trim();
+    });
+    if (!list.length) return '';
+    list.sort(function (a, b) {
+      var sa = titleScore(a.title, wanted || ''), sb = titleScore(b.title, wanted || '');
+      if (sa !== sb) return sb - sa;
+      return (a.index || 0) - (b.index || 0);
+    });
+    var best = list[0];
+    /* Coincidencia exacta del nombre (con o sin desambiguador) y nunca un
+       artículo de género, aunque esté el primero entre los resultados. */
+    if (!best || titleScore(best.title, wanted || '') < 3 || isGenericWikiTitle(best.title)) return '';
+    return best.extract;
+  }
+  function fetchLocalSummary(title, lang, localTitle) {
     var code = wikiLang(lang || 'en');
     if (code === 'en' || !String(title || '').trim()) return Promise.resolve('');
-    return fetchMetaJson(wikiExtractSearchUrl(code, title)).then(function (data) {
-      return cleanSummary(firstExtract(data, title), 2);
+    /* Si Wikidata tiene sitelink en <currentLang>wiki se consulta ese artículo
+       exacto; si no, se busca y se valida que el título sea realmente del juego. */
+    var url = localTitle ? wikiExtractUrl(code, localTitle) : wikiExtractSearchUrl(code, title);
+    var wanted = localTitle || title;
+    return fetchMetaJson(url).then(function (data) {
+      return cleanSummary(matchedLocalExtract(data, wanted), 2);
     }).catch(function () { return ''; });
   }
 
@@ -997,21 +1077,6 @@
       var s = typeof c === 'string' ? c : ((c && c.title) || '');
       return String(s).replace(/^(?:Category|Categoría):/i, '').replace(/_/g, ' ');
     }).join(' · ');
-  }
-
-  function firstExtract(data, wanted) {
-    var pages = data && data.query && data.query.pages ? data.query.pages : null;
-    if (!pages) return '';
-    var list = Object.keys(pages).map(function (k) { return pages[k]; }).filter(function (p) {
-      return p && p.missing === undefined && typeof p.extract === 'string' && p.extract.trim();
-    });
-    if (!list.length) return '';
-    list.sort(function (a, b) {
-      var sa = titleScore(a.title, wanted || ''), sb = titleScore(b.title, wanted || '');
-      if (sa !== sb) return sb - sa;
-      return (a.index || 0) - (b.index || 0);
-    });
-    return list[0].extract;
   }
 
   /* Recorta el extracto a 1-2 frases limpias sin romper abreviaturas habituales. */
@@ -1379,6 +1444,11 @@
         var branch = {
           qid: qid,
           entity: entity,
+          /* Sitelink del artículo en el idioma activo, cuando Wikidata lo tiene. */
+          localTitle: (function () {
+            var site = entity.sitelinks && entity.sitelinks[wikiLang(lang) + 'wiki'];
+            return site && site.title ? site.title : '';
+          })(),
           wikidataDescription: cleanSummary(pickDescription(entity, lang), 2),
           platformQids: wikidataClaimIds(entity.claims, 'P400'),
           genreQids: wikidataClaimIds(entity.claims, 'P136', true),
@@ -1443,10 +1513,12 @@
       var qid = page && page.pageprops && page.pageprops.wikibase_item;
       return (qid && /^Q\d+$/.test(qid)) ? qid : '';
     });
+    var wdBranch = fetchWikidataBranch(title, lang, qidFromEn);
     var branches = [
       enBranch,                                                              // Wikipedia EN
-      fetchWikidataBranch(title, lang, qidFromEn),                            // Wikidata + P577/P178/P136/P400
-      fetchLocalSummary(title, lang),                                        // Sinopsis en el idioma activo
+      wdBranch,                                                              // Wikidata + P577/P178/P136/P400
+      /* Usa el sitelink si existe; si no, busca y valida el título local. */
+      wdBranch.then(function (wd) { return fetchLocalSummary(title, lang, wd && wd.localTitle); }),
       fetchLocalWikiInfo(title, lang),                                       // Genero + tienda del Infobox local
       withRemasters !== false ? fetchRemasterPlatforms(title, lang) : Promise.resolve({ qids: [], text: '' }),
       fetchCoverRaw(title).catch(function () { return ''; })                  // Portada (sin segunda fase)
@@ -2272,10 +2344,13 @@
     return t('recommend.anyPlatform');
   }
   function inCollection(title) {
-    var n = normTitle(title), b = titleBase(title);
+    var n = normTitle(title), b = titleBase(title), year = titleYear(title);
     if (!n) return false;
     return state.games.some(function (g) {
-      return normTitle(g.title) === n || titleBase(g.title) === n || titleBase(g.title) === b;
+      if (normTitle(g.title) === n) return true;
+      /* Sin año se mantiene la comparación histórica por título base; con año,
+         "Resident Evil 4 (2005)" y "(2023)" son juegos distintos. */
+      return !year && !titleYear(g.title) && titleBase(g.title) === b;
     });
   }
   function markSeen(title) {
@@ -2326,7 +2401,10 @@
     return Promise.all(cats.map(function (cat) {
       return fetchJson(categoryMembersUrl(cat), 10000).then(function (data) {
         var members = data && data.query && data.query.categorymembers ? data.query.categorymembers : [];
-        return members.map(function (m) { return m && m.title ? m.title : ''; }).filter(candidateOk);
+        return members.map(function (m) { return m && m.title ? m.title : ''; })
+          .filter(candidateOk)          // series/géneros se descartan antes de limpiar
+          .map(cleanWikipediaTitle)     // "RE4 (2005 video game)" -> "RE4 (2005)"
+          .filter(Boolean);
       }).catch(function () { return []; });
     })).then(function (lists) {
       var out = {}, seen = {};
@@ -2379,7 +2457,7 @@
     var rel = splitRelease(result.releaseDate || '');
     var rawGenres = (result.genres && result.genres.length) ? result.genres : (result.genre ? [result.genre] : []);
     var rec = {
-      title: String(title).trim(),
+      title: cleanWikipediaTitle(title),
       cover: result.cover || '',
       genres: compactGenres(rawGenres),
       releaseDate: rel.releaseDate,
@@ -2400,7 +2478,7 @@
   function tryRecommendCandidate(list, i, token, lang) {
     if (token !== recommendToken) return Promise.resolve(null);
     if (i >= Math.min(list.length, 10)) return Promise.resolve(null);
-    var title = list[i];
+    var title = cleanWikipediaTitle(list[i]);
     if (isSeen(title) || inCollection(title)) return tryRecommendCandidate(list, i + 1, token, lang);
     return collectMetadata(title, lang, false).then(function (result) {
       if (token !== recommendToken) return null;
@@ -2782,7 +2860,7 @@
     navigator.serviceWorker.addEventListener('controllerchange', reloadClean);
     purgeOldCaches().then(function (purged) {
       /* La query fuerza al navegador a descargar el SW nuevo sin usar su HTTP cache. */
-      return navigator.serviceWorker.register('./sw.js?v=1.2.0', { scope: './' })
+      return navigator.serviceWorker.register('./sw.js?v=1.2.1', { scope: './' })
         .then(function (registration) {
           if (purged) setTimeout(reloadClean, 200);
           return registration.update();

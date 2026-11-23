@@ -1,6 +1,6 @@
 /* GameVault service worker: Network-First for HTML, Cache-First for assets. */
-/* v1.2.0: el subtitulo del modal de recomendaciones solo muestra los generos compartidos y las plataformas detectadas para ese juego; purga de las caches antiguas. */
-var CACHE = 'gamevault-v1.2.0';
+/* v1.2.1: los títulos conservan el año de desambiguación de Wikipedia y las sinopsis locales se validan contra el nombre del juego. */
+var CACHE = 'gamevault-v1.2.1';
 var ROOT = new URL('./', self.registration.scope).href;
 var PRECACHE = [
   './',
