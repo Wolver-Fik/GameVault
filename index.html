@@ -7,11 +7,10 @@
   <meta name="description" content="GameVault: tu colección de videojuegos, backlog y horas jugadas en un único lugar.">
   <meta name="theme-color" content="#6366F1">
   <script>
-    /* v1.0.9: elimina de entrada cualquier cache antigua de GameVault para que
-       los clientes de PC, la pestana "Mis Consolas" y las variantes "/ Emulador"
-       no se sirvan de una version previa. */
+    /* elimina de entrada cualquier cache antigua de GameVault para que no se
+       sirva una versión previa del selector de plataformas. */
     (function () {
-      var CURRENT = 'gamevault-v1.0.9';
+      var CURRENT = 'gamevault-v1.1.6';
       if (!('caches' in window)) return;
       try {
         caches.keys().then(function (keys) {
@@ -176,9 +175,11 @@
           </div>
         </div>
       </div>
-      <label class="lbl"><span data-i18n="editor.platform">Plataforma</span>
-        <input class="input" id="e-plat" type="text" list="dl-plat" autocomplete="off" maxlength="40" data-i18n-placeholder="editor.platformPlaceholder" placeholder="PC, PS5, Switch...">
-      </label>
+      <div class="lbl"><span data-i18n="editor.platform">Plataforma</span>
+        <input class="input" id="e-plat" type="text" list="dl-plat" autocomplete="off" maxlength="40" data-i18n-placeholder="editor.platformPlaceholder" placeholder="Selecciona una plataforma...">
+        <span class="help" id="e-plat-help" hidden></span>
+        <button class="link-btn" id="e-plat-show-all" type="button" data-i18n="editor.showAllPlatforms" hidden>Ver todas las plataformas</button>
+      </div>
       <div class="lbl full"><span data-i18n="editor.genres">Géneros</span>
         <div class="genre-chips" id="e-genres" role="group" data-i18n-aria="editor.genresAria" aria-label="Géneros"></div>
         <span class="help" data-i18n="editor.genresHelp">Selecciona uno o varios géneros.</span>

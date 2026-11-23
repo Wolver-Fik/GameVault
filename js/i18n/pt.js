@@ -58,6 +58,21 @@
     'genre.indie': 'Indie',
     'genre.fighting': 'Luta',
     'genre.simulation': 'Simulação',
+    'genre.survival': 'Sobrevivência',
+    'genre.sandbox': 'Sandbox',
+    'genre.open_world': 'Mundo aberto',
+    'genre.metroidvania': 'Metroidvania',
+    'genre.roguelike': 'Roguelike / Roguelite',
+    'genre.soulslike': 'Soulslike',
+    'genre.stealth': 'Furtivo',
+    'genre.visual_novel': 'Novela visual',
+    'genre.rhythm': 'Ritmo / Musical',
+    'genre.mmo': 'MMO',
+    'genre.survival_horror': 'Terror e sobrevivência',
+    'genre.action_adventure': 'Ação e aventura',
+    'genre.action_rpg': 'RPG de ação',
+    'genre.tactical_rpg': 'RPG tático',
+    'genre.puzzle_platformer': 'Puzzle-plataforma',
     'stats.pendingInProgress': '{pend} pendentes · {play} em andamento',
     'stats.avgHours': 'Média de {hours} h por jogo',
     'stats.noHours': 'Ainda sem horas',
@@ -106,7 +121,7 @@
     'editor.hours': 'Horas jogadas',
     'editor.score': 'Minha nota',
     'editor.notes': 'Notas',
-    'editor.platformPlaceholder': 'PC, PS5, Switch...',
+    'editor.platformPlaceholder': 'Seleciona uma plataforma...',
     'editor.genrePlaceholder': 'RPG, Ação...',
     'editor.coverFetch': 'Buscar capa',
     'editor.coverUpload': 'Enviar imagem',
@@ -289,5 +304,11 @@
     ,'owned.pcXboxApp': 'PC / Xbox App (Game Pass)'
     ,'owned.pcRiot': 'PC / Riot Client'
     ,'owned.pcOtherLauncher': 'PC / Outro launcher'
+    /* v1.1.2: seletor inteligente de plataformas no editor. */
+    ,'editor.showAllPlatforms': 'Ver todas as plataformas'
+    ,'editor.platformFiltered': 'Filtrado pelas suas consolas e pela disponibilidade do jogo'
+    ,'editor.platformNoMatch': 'Nenhuma das suas consolas corresponde ao jogo: a mostrar todas as plataformas'
+    ,'editor.platformAllShown': 'A mostrar todas as plataformas'
+    ,'meta.platforms': 'Plataformas'
   };
 })();

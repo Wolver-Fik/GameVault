@@ -58,6 +58,21 @@
     'genre.indie': 'Инди',
     'genre.fighting': 'Файтинг',
     'genre.simulation': 'Симулятор',
+    'genre.survival': 'Выживание',
+    'genre.sandbox': 'Песочница',
+    'genre.open_world': 'Открытый мир',
+    'genre.metroidvania': 'Метроидвания',
+    'genre.roguelike': 'Рогалик / Роглит',
+    'genre.soulslike': 'Соулслайк',
+    'genre.stealth': 'Стелс',
+    'genre.visual_novel': 'Визуальная новелла',
+    'genre.rhythm': 'Ритм / Музыка',
+    'genre.mmo': 'MMO',
+    'genre.survival_horror': 'Хоррор выживания',
+    'genre.action_adventure': 'Экшен-приключение',
+    'genre.action_rpg': 'Action-RPG',
+    'genre.tactical_rpg': 'Тактическая RPG',
+    'genre.puzzle_platformer': 'Платформер-головоломка',
     'stats.pendingInProgress': '{pend} в планах · {play} в процессе',
     'stats.avgHours': 'В среднем {hours} ч на игру',
     'stats.noHours': 'Пока без часов',
@@ -106,7 +121,7 @@
     'editor.hours': 'Часы игры',
     'editor.score': 'Моя оценка',
     'editor.notes': 'Заметки',
-    'editor.platformPlaceholder': 'ПК, PS5, Switch...',
+    'editor.platformPlaceholder': 'Выберите платформу...',
     'editor.genrePlaceholder': 'RPG, Экшен...',
     'editor.coverFetch': 'Найти обложку',
     'editor.coverUpload': 'Загрузить изображение',
@@ -289,5 +304,11 @@
     ,'owned.pcXboxApp': 'PC / Xbox App (Game Pass)'
     ,'owned.pcRiot': 'PC / Riot Client'
     ,'owned.pcOtherLauncher': 'PC / Другой лаунчер'
+    /* v1.1.2: умный выбор платформы в редакторе. */
+    ,'editor.showAllPlatforms': 'Показать все платформы'
+    ,'editor.platformFiltered': 'Фильтр по вашим консолям и доступности игры'
+    ,'editor.platformNoMatch': 'Ни одна из ваших консолей не подходит — показаны все платформы'
+    ,'editor.platformAllShown': 'Показаны все платформы'
+    ,'meta.platforms': 'Платформы'
   };
 })();

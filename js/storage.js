@@ -35,6 +35,16 @@
      Los launchers de PC son claves propias para que cada juego recuerde su cliente. */
   var PLATFORM_KEYS = CONSOLE_KEYS.concat(['emulator', 'retro']);
 
+  /* Catálogo canónico de géneros (v1.1.1). App.js lo consume para los chips del
+     editor, el filtro superior, el datalist, el scraper y el recomendador, así
+     que no hay dos fuentes de verdad. Los subgéneros híbridos evitan etiquetas
+     duplicadas: survival_horror sustituye a survival + horror, etc. */
+  var GENRE_KEYS = ['action', 'adventure', 'action_adventure', 'rpg', 'action_rpg',
+    'tactical_rpg', 'platformer', 'puzzle', 'puzzle_platformer', 'shooter', 'strategy',
+    'sports', 'racing', 'horror', 'survival', 'survival_horror', 'indie', 'fighting',
+    'simulation', 'sandbox', 'open_world', 'metroidvania', 'roguelike', 'soulslike',
+    'stealth', 'visual_novel', 'rhythm', 'mmo'];
+
   /* Acepta un array de generos o el genre:string de las versiones anteriores. */
   function genreList(value) {
     var out = [];
@@ -128,9 +138,9 @@
       });
     }
     return [
-      g(1, 'Hollow Knight', 'pc', ['platformer', 'indie'], 'jugando', 18.5, null, tr('sample.note1', ''), '2017', 'Team Cherry', 'sample.summary1'),
-      g(2, 'Elden Ring', 'ps5', ['rpg', 'action'], 'completado', 96, 10, '', '2022-02-25', 'FromSoftware', 'sample.summary2'),
-      g(3, 'Hades', 'switch', ['action', 'rpg'], 'platino', 61, 9, '', '2020-09-17', 'Supergiant Games', 'sample.summary3'),
+      g(1, 'Hollow Knight', 'pc', ['metroidvania', 'platformer', 'action'], 'jugando', 18.5, null, tr('sample.note1', ''), '2017', 'Team Cherry', 'sample.summary1'),
+      g(2, 'Elden Ring', 'ps5', ['soulslike', 'rpg', 'open_world'], 'completado', 96, 10, '', '2022-02-25', 'FromSoftware', 'sample.summary2'),
+      g(3, 'Hades', 'switch', ['roguelike', 'action'], 'platino', 61, 9, '', '2020-09-17', 'Supergiant Games', 'sample.summary3'),
       g(4, 'Disco Elysium', 'pc', ['rpg', 'adventure'], 'pendiente', 0, null, tr('sample.note2', ''), '2019-10-15', 'ZA/UM', 'sample.summary4'),
       g(5, 'Persona 5 Royal', 'ps4', ['rpg'], 'abandonado', 34, 7, tr('sample.note5', ''), '2019-10-31', 'Atlus', 'sample.summary5'),
       g(6, 'Metroid Fusion', 'gba', ['adventure', 'action'], 'pendiente', 0, null, tr('sample.note6', ''), '2002-11-18', 'Nintendo EPD', 'sample.summary6'),
@@ -236,6 +246,7 @@
     CONSOLE_KEYS: CONSOLE_KEYS,
     PC_LAUNCHER_KEYS: PC_LAUNCHER_KEYS,
     PLATFORM_KEYS: PLATFORM_KEYS,
+    GENRE_KEYS: GENRE_KEYS,
     uid: uid,
     splitRelease: splitRelease,
     genreList: genreList,

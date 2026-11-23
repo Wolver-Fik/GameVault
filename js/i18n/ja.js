@@ -58,6 +58,21 @@
     'genre.indie': 'インディー',
     'genre.fighting': '格闘',
     'genre.simulation': 'シミュレーション',
+    'genre.survival': 'サバイバル',
+    'genre.sandbox': 'サンドボックス',
+    'genre.open_world': 'オープンワールド',
+    'genre.metroidvania': 'メトロイドヴァニア',
+    'genre.roguelike': 'ローグライク / ローグライト',
+    'genre.soulslike': 'ソウルズライク',
+    'genre.stealth': 'ステルス',
+    'genre.visual_novel': 'ビジュアルノベル',
+    'genre.rhythm': 'リズム / 音楽',
+    'genre.mmo': 'MMO',
+    'genre.survival_horror': 'サバイバルホラー',
+    'genre.action_adventure': 'アクションアドベンチャー',
+    'genre.action_rpg': 'アクションRPG',
+    'genre.tactical_rpg': 'タクティカルRPG',
+    'genre.puzzle_platformer': 'パズルプラットフォーマー',
     'stats.pendingInProgress': '予定 {pend} 件 · 進行中 {play} 件',
     'stats.avgHours': '1 ゲームあたり平均 {hours} 時間',
     'stats.noHours': 'まだ時間が記録されていません',
@@ -106,7 +121,7 @@
     'editor.hours': 'プレイ時間',
     'editor.score': '自分の評価',
     'editor.notes': 'メモ',
-    'editor.platformPlaceholder': 'PC、PS5、Switch...',
+    'editor.platformPlaceholder': 'プラットフォームを選択...',
     'editor.genrePlaceholder': 'RPG、アクション...',
     'editor.coverFetch': 'カバーを検索',
     'editor.coverUpload': '画像をアップロード',
@@ -289,5 +304,11 @@
     ,'owned.pcXboxApp': 'PC / Xbox App (Game Pass)'
     ,'owned.pcRiot': 'PC / Riot Client'
     ,'owned.pcOtherLauncher': 'PC / その他のランチャー'
+    /* v1.1.2: 編集画面のスマートなプラットフォーム選択。 */
+    ,'editor.showAllPlatforms': 'すべてのプラットフォームを表示'
+    ,'editor.platformFiltered': 'お持ちの本体とゲームの対応状況で絞り込み中'
+    ,'editor.platformNoMatch': 'お持ちの本体と一致しませんでした。すべてのプラットフォームを表示します'
+    ,'editor.platformAllShown': 'すべてのプラットフォームを表示中'
+    ,'meta.platforms': 'プラットフォーム'
   };
 })();

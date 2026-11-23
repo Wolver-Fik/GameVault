@@ -2,8 +2,8 @@
 (function () {
   var STORAGE = window.GVStorage;
   var I = window.GVI18N;
-  var CACHE_NAME = 'gamevault-v1.0.9';
-  var RELOAD_FLAG = 'gv-cache-reload-v1.0.9';
+  var CACHE_NAME = 'gamevault-v1.1.6';
+  var RELOAD_FLAG = 'gv-cache-reload-v1.1.6';
 
   function t(key, vars) {
     if (!I || typeof I.t !== 'function') return String(key);
@@ -13,6 +13,18 @@
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
+  }
+  /* El autocompletado espera a TODAS las fuentes antes de tocar el formulario.
+     allSettled evita que una API lenta cancele el resto de peticiones. */
+  if (typeof Promise.allSettled !== 'function') {
+    Promise.allSettled = function (items) {
+      return Promise.all(Array.prototype.map.call(items || [], function (p) {
+        return Promise.resolve(p).then(
+          function (value) { return { status: 'fulfilled', value: value }; },
+          function (reason) { return { status: 'rejected', reason: reason }; }
+        );
+      }));
+    };
   }
 
   var LOCALE_TAG = {
@@ -55,7 +67,15 @@
   var PLATFORM_KEYS = (STORAGE && Array.isArray(STORAGE.PLATFORM_KEYS)) ? STORAGE.PLATFORM_KEYS.slice() :
     OWNED_PLATFORM_KEYS.concat(['emulator', 'retro']);
   var VIEW_KEY = (STORAGE && STORAGE.VIEW_KEY) ? STORAGE.VIEW_KEY : 'gamevault-active-view-v1';
-  var GENRE_KEYS = ['action', 'adventure', 'rpg', 'platformer', 'shooter', 'strategy', 'sports', 'racing', 'horror', 'puzzle', 'indie', 'fighting', 'simulation'];
+  /* Catálogo único de géneros definido en storage.js (v1.1.1), con fallback por si
+     storage.js no se cargara; la fuente de verdad es GVStorage.GENRE_KEYS. */
+  var FALLBACK_GENRE_KEYS = ['action', 'adventure', 'action_adventure', 'rpg', 'action_rpg',
+    'tactical_rpg', 'platformer', 'puzzle', 'puzzle_platformer', 'shooter', 'strategy',
+    'sports', 'racing', 'horror', 'survival', 'survival_horror', 'indie', 'fighting',
+    'simulation', 'sandbox', 'open_world', 'metroidvania', 'roguelike', 'soulslike',
+    'stealth', 'visual_novel', 'rhythm', 'mmo'];
+  var GENRE_KEYS = (STORAGE && Array.isArray(STORAGE.GENRE_KEYS))
+    ? STORAGE.GENRE_KEYS.slice() : FALLBACK_GENRE_KEYS.slice();
 
   var state = { games: [], f: { status: 'todos', plat: '', genre: '', sort: 'reciente', q: '', ownedOnly: false } };
   var currentView = 'collection';
@@ -72,6 +92,10 @@
   var pickId = null;
   var rollToken = 0;
   var editGenres = [];
+  /* Selector de plataforma del editor: null = catálogo completo sin filtrar. */
+  var platformOptions = null;
+  var platformHelpKey = '';
+  var platformShowAll = false;
   var recommendToken = 0;
   var recommendSeen = {};
   var recommendCurrent = null;
@@ -138,6 +162,9 @@
     add('steam', 'p:pcSteam'); add('steam', 'o:pcSteam');
     add('pc/steam', 'p:pcSteam'); add('pc/steam', 'o:pcSteam');
     add('windows', 'p:pcSteam'); add('windows', 'o:pcSteam');
+    /* Etiquetas exactas que devuelven P400 y el Infobox de Wikipedia. */
+    add('microsoft windows', 'p:pcSteam'); add('microsoft windows', 'o:pcSteam');
+    add('ms windows', 'p:pcSteam'); add('ms windows', 'o:pcSteam');
     /* Clientes de PC: alias cortos ademas de las etiquetas traducidas de cada idiom. */
     add('epic', 'p:pcEpic'); add('epic', 'o:pcEpic');
     add('epic games', 'p:pcEpic'); add('epic games', 'o:pcEpic');
@@ -168,17 +195,23 @@
     add('ps3 / emulador', 'p:ps3Emulator'); add('ps3 emulador', 'p:ps3Emulator');
     add('switch / emulator', 'p:switchEmulator'); add('switch emulator', 'p:switchEmulator');
     add('switch / emulador', 'p:switchEmulator'); add('switch emulador', 'p:switchEmulator');
-    add('playstation 5', 'o:ps5'); add('playstation 4', 'o:ps4'); add('playstation 3', 'o:ps3');
-    add('playstation 2', 'o:ps2'); add('playstation 1', 'o:ps1'); add('playstation', 'o:ps1');
+    /* Consolas: la etiqueta completa de P400/Infobox y la corta de Mis Consolas
+       apuntan a la MISMA clave, asi el cruce con ownedPlatforms es exacto. */
+    add('playstation 5', 'p:ps5'); add('playstation 5', 'o:ps5');
+    add('playstation 4', 'p:ps4'); add('playstation 4', 'o:ps4');
+    add('playstation 3', 'p:ps3'); add('playstation 3', 'o:ps3');
+    add('playstation 2', 'p:ps2'); add('playstation 2', 'o:ps2');
+    add('playstation 1', 'p:ps1'); add('playstation 1', 'o:ps1'); add('playstation', 'o:ps1');
     add('ps one', 'o:ps1'); add('psx', 'o:ps1');
     add('playstation portable', 'o:psp'); add('ps portable', 'o:psp');
     add('playstation vita', 'o:psVita'); add('ps vita', 'o:psVita'); add('vita', 'o:psVita');
     add('xbox series x|s', 'o:xboxSeries'); add('xbox series', 'o:xboxSeries'); add('xbox', 'o:xboxSeries');
     add('xbox one', 'o:xboxOne'); add('xbox 360', 'o:xbox360');
     add('nintendo switch 2', 'o:switch2'); add('switch 2', 'o:switch2');
-    add('nintendo switch', 'o:switch');
-    add('wii u', 'o:wiiU'); add('wii', 'o:wii');
-    add('gamecube', 'o:gamecube'); add('nintendo gamecube', 'o:gamecube');
+    add('nintendo switch', 'p:switch'); add('nintendo switch', 'o:switch');
+    add('wii u', 'p:wiiU'); add('wii u', 'o:wiiU'); add('wii', 'p:wii'); add('wii', 'o:wii');
+    add('gamecube', 'p:gamecube'); add('gamecube', 'o:gamecube');
+    add('nintendo gamecube', 'p:gamecube'); add('nintendo gamecube', 'o:gamecube');
     add('nintendo 64', 'o:n64'); add('n64', 'o:n64');
     add('super nintendo', 'o:snes'); add('super nintendo entertainment system', 'o:snes');
     add('nintendo entertainment system', 'o:nes'); add('famicom', 'o:nes');
@@ -192,6 +225,35 @@
     add('emulador', 'o:retroEmulator'); add('emulator', 'o:retroEmulator');
     add('retro / emulator', 'o:retroEmulator'); add('retro / emulador', 'o:retroEmulator');
     add('movil', 'o:mobile'); add('móvil', 'o:mobile'); add('mobile', 'o:mobile'); add('android', 'o:mobile'); add('ios', 'o:mobile');
+    /* Alias de los generos nuevos para el tooltip de portada, el datalist y el
+       autocompletado: aceptan tanto la clave como el texto que devuelve el scraper. */
+    add('survival', 'g:survival'); add('survival game', 'g:survival');
+    add('sandbox', 'g:sandbox'); add('sandbox game', 'g:sandbox');
+    add('open world', 'g:open_world'); add('open-world', 'g:open_world');
+    add('metroidvania', 'g:metroidvania'); add('metroid vania', 'g:metroidvania');
+    add('roguelike', 'g:roguelike'); add('roguelite', 'g:roguelike');
+    add('rogue-like', 'g:roguelike'); add('rogue-lite', 'g:roguelike');
+    add('soulslike', 'g:soulslike'); add('souls-like', 'g:soulslike');
+    add('stealth', 'g:stealth'); add('stealth game', 'g:stealth');
+    add('visual novel', 'g:visual_novel'); add('visual-novel', 'g:visual_novel');
+    add('rhythm', 'g:rhythm'); add('rhythm game', 'g:rhythm'); add('music game', 'g:rhythm');
+    add('mmo', 'g:mmo'); add('mmorpg', 'g:mmo'); add('massively multiplayer', 'g:mmo');
+    /* Subgéneros híbridos: alias en inglés y español para el scraper, el datalist
+       y los juegos importados que todavía guardaban el texto sin normalizar. */
+    add('survival horror', 'g:survival_horror'); add('survival horror game', 'g:survival_horror');
+    add('terror y supervivencia', 'g:survival_horror'); add('horror de supervivencia', 'g:survival_horror');
+    add('action adventure', 'g:action_adventure'); add('action-adventure', 'g:action_adventure');
+    add('action & adventure', 'g:action_adventure'); add('accion y aventura', 'g:action_adventure');
+    add('acción y aventura', 'g:action_adventure');
+    add('action rpg', 'g:action_rpg'); add('action role-playing game', 'g:action_rpg');
+    add('action role playing game', 'g:action_rpg'); add('rpg de accion', 'g:action_rpg');
+    add('rpg de acción', 'g:action_rpg');
+    add('tactical rpg', 'g:tactical_rpg'); add('strategy rpg', 'g:tactical_rpg');
+    add('tactical role-playing game', 'g:tactical_rpg'); add('strategy role-playing game', 'g:tactical_rpg');
+    add('rpg tactico', 'g:tactical_rpg'); add('rpg táctico', 'g:tactical_rpg');
+    add('rol táctico', 'g:tactical_rpg');
+    add('puzzle platformer', 'g:puzzle_platformer'); add('puzzle-platformer', 'g:puzzle_platformer');
+    add('puzzle plataformas', 'g:puzzle_platformer'); add('puzzle-plataformas', 'g:puzzle_platformer');
     return map;
   }
   function keyOf(kind, value) {
@@ -218,16 +280,47 @@
     return list.indexOf(key) !== -1 ? t(prefix + key) : String(value || '');
   }
 
+  /* Un híbrido absorbe siempre a sus componentes: no queremos
+     "Survival Horror · Supervivencia · Terror" en la misma ficha. */
+  var HYBRID_COMPONENTS = {
+    survival_horror: ['survival', 'horror'],
+    action_adventure: ['action', 'adventure'],
+    action_rpg: ['action', 'rpg'],
+    tactical_rpg: ['rpg', 'strategy'],
+    puzzle_platformer: ['puzzle', 'platformer']
+  };
+  function compactGenres(list) {
+    var out = [];
+    (list || []).forEach(function (v) {
+      var k = keyOf('g', v);
+      if (k && out.indexOf(k) === -1) out.push(k);
+    });
+    /* Un juego importado que ya traía survival + horror también se compacta. */
+    var inferred = [];
+    Object.keys(HYBRID_COMPONENTS).forEach(function (hybrid) {
+      var parts = HYBRID_COMPONENTS[hybrid];
+      if (out.indexOf(hybrid) !== -1) return;
+      var complete = parts.every(function (part) { return out.indexOf(part) !== -1; });
+      if (complete) inferred.push(hybrid);
+    });
+    inferred.forEach(function (hybrid) { out.push(hybrid); });
+    Object.keys(HYBRID_COMPONENTS).forEach(function (hybrid) {
+      if (out.indexOf(hybrid) === -1) return;
+      HYBRID_COMPONENTS[hybrid].forEach(function (part) {
+        var i = out.indexOf(part);
+        if (i !== -1) out.splice(i, 1);
+      });
+    });
+    /* Una sola clave = un solo chip, aunque dos fuentes hayan traído el mismo
+       híbrido (p. ej. "Terror y supervivencia" desde ES y desde P136). */
+    return out.filter(function (k, i) { return !!k && out.indexOf(k) === i; });
+  }
+
   /* Un juego puede tener varios generos; los juegos antiguos solo tenian genre. */
   function genresOf(g) {
     if (!g) return [];
     var raw = Array.isArray(g.genres) ? g.genres : (g.genre ? [g.genre] : []);
-    var out = [];
-    raw.forEach(function (v) {
-      var k = keyOf('g', v);
-      if (k && out.indexOf(k) === -1) out.push(k);
-    });
-    return out;
+    return compactGenres(raw.map(function (v) { return keyOf('g', v); }));
   }
   function primaryGenre(g) { return genresOf(g)[0] || ''; }
   function genreTagsHtml(g, emptyText) {
@@ -241,7 +334,7 @@
 
   /* ---------- Mis consolas / dispositivos disponibles ---------- */
   var RETRO_OWNED_KEYS = ['retroEmulator', 'ps2', 'ps1', 'psp', 'n64', 'snes', 'nes',
-    'gba', 'gameboy', 'genesis', 'dreamcast'];
+    'gba', 'gameboy', 'genesis', 'dreamcast', 'gamecube', 'wii'];
   /* Que hardware sirve para cada plataforma de juego (retrocompatibilidad incluida).
      Las variantes "/ Emulador" cuentan como maquina valida para su consola base. */
   var PLATFORM_TO_OWNED = {
@@ -259,9 +352,9 @@
     switch2: ['switch2', 'switchEmulator'],
     switch: ['switch', 'switch2', 'switchEmulator'],
     switchEmulator: ['switchEmulator', 'switch', 'switch2'],
-    wiiU: ['wiiU'],
-    wii: ['wii', 'wiiU'],
-    gamecube: ['gamecube', 'wii'],
+    wiiU: ['wiiU', 'retroEmulator'],
+    wii: ['wii', 'wiiU', 'retroEmulator'],
+    gamecube: ['gamecube', 'wii', 'retroEmulator'],
     n64: ['n64', 'retroEmulator'],
     snes: ['snes', 'retroEmulator'],
     nes: ['nes', 'retroEmulator'],
@@ -279,10 +372,66 @@
     retro: RETRO_OWNED_KEYS,
     xbox: ['xboxSeries']
   };
-  /* Cualquier launcher de PC (y el alias historico 'pc') sirve para jugar en ese PC. */
+  /* Cada cliente de PC es una maquina distinta: detectar "EA App" no habilita
+     los demas launchers. Steam Deck se anade aparte en platformKeysMatchingOwned. */
   PC_RUNTIME_KEYS.concat(['pc']).forEach(function (k) {
-    PLATFORM_TO_OWNED[k] = PC_RUNTIME_KEYS.slice();
+    PLATFORM_TO_OWNED[k] = [k === 'pc' ? 'pcSteam' : k];
   });
+  /* Si el usuario posee una variante "/ Emulador", también puede elegir la
+     consola base (y la categoría retro/genérica); y al revés, al marcar una
+     consola retro se le ofrece "Retro / Emulador". */
+  var OWNED_TO_PLATFORM_EXTRA = {
+    pcEmulator: ['emulator'],
+    retroEmulator: ['retro'],
+    ps4Emulator: ['ps4'],
+    ps3Emulator: ['ps3'],
+    switchEmulator: ['switch', 'switch2'],
+    switch2: ['switch']
+  };
+  function addPlatformOption(list, key) {
+    if (!key || PLATFORM_KEYS.indexOf(key) === -1 || list.indexOf(key) !== -1) return;
+    list.push(key);
+  }
+  /* Opciones del datalist al abrir el editor: solo el hardware del usuario. */
+  function platformOptionsForOwned() {
+    if (!ownedConfigured()) return PLATFORM_KEYS.slice();
+    var owned = effectiveOwnedKeys();
+    if (!owned.length) return PLATFORM_KEYS.slice();
+    var out = [];
+    owned.forEach(function (k) {
+      addPlatformOption(out, k);
+      (OWNED_TO_PLATFORM_EXTRA[k] || []).forEach(function (extra) { addPlatformOption(out, extra); });
+    });
+    return out;
+  }
+  /* Cruce inverso: de las plataformas del juego a las que puede ejecutar el
+     usuario. Primero el hardware marcado en "Mis Consolas" para que la primera
+     coincidencia autoseleccionada sea realmente una máquina que posee. */
+  function platformKeysMatchingOwned(candidates, owned) {
+    var out = [];
+    function add(k) {
+      if (PLATFORM_KEYS.indexOf(k) === -1) return;
+      if (out.indexOf(k) === -1) out.push(k);
+    }
+    (candidates || []).forEach(function (key) {
+      var capable = PLATFORM_TO_OWNED[key] || [key];
+      /* Un launcher detectado solo habilita ese cliente (y Steam Deck, que
+         ejecuta el mismo catalogo), nunca todos los clientes marcados. */
+      if (PC_LAUNCHER_KEYS.indexOf(key) !== -1) capable = [key, 'steamDeck'];
+      var hits = capable.filter(function (k) { return owned.indexOf(k) !== -1; });
+      if (!hits.length) return;
+      /* Solo el hardware realmente marcado (y sus equivalentes). Añadir la
+         plataforma detectada tal cual colaría "PS4 / Emulador" o todos los
+         launchers de PC cuando el usuario no los tiene marcados. */
+      hits.forEach(function (k) {
+        add(k);
+        (OWNED_TO_PLATFORM_EXTRA[k] || []).forEach(add);
+      });
+      /* Un emulador retro también habilita la consola física del juego. */
+      if (hits.indexOf('retroEmulator') !== -1 && RETRO_OWNED_KEYS.indexOf(key) !== -1) add(key);
+    });
+    return out;
+  }
   function ownedConfigured() { return Array.isArray(ownedPlatforms); }
   function effectiveOwnedKeys() {
     if (!ownedConfigured()) return OWNED_PLATFORM_KEYS.slice();
@@ -413,10 +562,12 @@
       '&origin=*';
   }
 
-  /* Peticion comun con timeout: una API lenta no debe dejar el modal esperando para siempre. */
+  /* Timeout de seguridad, NUNCA por debajo de 8s: una consulta lenta de
+     Wikidata (P577/P178/P136/P400) no debe cortarse a mitad del primer clic. */
   function fetchJson(url, timeout) {
+    var ms = Math.max(8000, Number(timeout) || 15000);
     var ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    var timer = ctl ? setTimeout(function () { ctl.abort(); }, timeout || 12000) : null;
+    var timer = ctl ? setTimeout(function () { ctl.abort(); }, ms) : null;
     var init = ctl ? { signal: ctl.signal } : undefined;
     function done() { if (timer) clearTimeout(timer); }
     return fetch(url, init).then(function (r) {
@@ -425,6 +576,8 @@
       return r.json();
     }).catch(function (e) { done(); throw e; });
   }
+  /* Todas las fuentes del autocompletado usan el mismo margen amplio. */
+  function fetchMetaJson(url) { return fetchJson(url, 20000); }
 
   function normTitle(s) {
     return String(s || '').toLowerCase().normalize('NFD')
@@ -547,18 +700,23 @@
 
   function encodeQ(s) { return encodeURIComponent(String(s || '').trim()).replace(/%20/g, '+'); }
 
-  /* Busqueda en Wikipedia EN: extracto, categorias, portada y entity-id de Wikidata. */
-  function wikiMetadataUrl(title) {
+  /* Busqueda en Wikipedia EN: extracto, TODAS las categorias, seccion 0 del
+     Infobox video game (campo "| genre = ..."), portada y entity-id de Wikidata. */
+  function wikiMetadataUrl(title, suffix) {
+    var search = String(title).trim() + (suffix === undefined ? ' video game' : (suffix || ''));
     return wikiApi('en') +
       '?action=query' +
       '&generator=search' +
-      '&gsrsearch=' + encodeQ(String(title).trim() + ' video game') +
+      '&gsrsearch=' + encodeQ(search) +
       '&gsrlimit=3' +
-      '&prop=extracts|categories|pageimages|pageprops' +
+      '&prop=extracts|categories|revisions|pageimages|pageprops' +
       '&exintro=1' +
       '&explaintext=1' +
       '&exsentences=3' +
-      '&cllimit=50' +
+      '&cllimit=max' +
+      '&rvprop=content' +
+      '&rvslots=main' +
+      '&rvsection=0' +
       '&piprop=thumbnail' +
       '&pithumbsize=500' +
       '&pilicense=any' +
@@ -599,16 +757,180 @@
       '&format=json' +
       '&origin=*';
   }
-  function wikidataClaimIds(claims, prop) {
+  function wikidataClaimIds(claims, prop, includeDeprecated) {
     var arr = claims && claims[prop];
     if (!arr || !arr.length) return [];
     var ids = [];
+    /* P136 se lee completo (incluye todos los elementos del array); P400 solo
+       usa claims vigentes para no arrastrar plataformas obsoletas. */
     arr.forEach(function (c) {
-      if (!c || c.rank === 'deprecated') return;
+      if (!c || (!includeDeprecated && c.rank === 'deprecated')) return;
       var v = c.mainsnak && c.mainsnak.datavalue && c.mainsnak.datavalue.value;
       if (v && v.id && /^Q\d+$/.test(v.id) && ids.indexOf(v.id) === -1) ids.push(v.id);
     });
     return ids;
+  }
+
+  /* Etiquetas de TODOS los QIDs de P136 / P178 / P400 en una sola tanda:
+     primero el idioma activo y después inglés como reserva. */
+  function wikidataLabelsUrl(ids, lang) {
+    var code = wikiLang(lang);
+    return WD_API +
+      '?action=wbgetentities' +
+      '&ids=' + encodeURIComponent((ids || []).join('|')) +
+      '&props=labels' +
+      '&languages=' + (code === 'en' ? 'en' : code + '|en') +
+      '&format=json' +
+      '&origin=*';
+  }
+  function fetchWikidataLabels(ids, lang) {
+    var chunks = [], i;
+    for (i = 0; i < (ids || []).length; i += 50) chunks.push(ids.slice(i, i + 50));
+    if (!chunks.length) return Promise.resolve({});
+    return Promise.allSettled(chunks.map(function (chunk) {
+      return fetchMetaJson(wikidataLabelsUrl(chunk, lang)).then(function (payload) {
+        var entities = (payload && payload.entities) || {}, map = {};
+        chunk.forEach(function (id) {
+          var labels = entities[id] && entities[id].labels;
+          var local = labels && labels[wikiLang(lang)] && labels[wikiLang(lang)].value;
+          var en = labels && labels.en && labels.en.value;
+          if (local || en) map[id] = { preferred: String(local || en), en: String(en || local || '') };
+        });
+        return map;
+      });
+    })).then(function (results) {
+      var out = {};
+      results.forEach(function (res) {
+        if (res.status !== 'fulfilled') return;
+        Object.keys(res.value).forEach(function (id) { out[id] = res.value[id]; });
+      });
+      return out;
+    });
+  }
+  function labelFromMap(map, id) {
+    var v = map && id && map[id];
+    return (v && (v.preferred || v.en)) || '';
+  }
+  /* Artículo en el idioma activo: sección 0 + extracto para reforzar la detección
+     de géneros y la sinopsis sin esperar a la rama de Wikidata. */
+  function wikiLocalSectionUrl(lang, title) {
+    return wikiApi(lang) +
+      '?action=query' +
+      '&generator=search' +
+      '&gsrsearch=' + encodeQ(String(title).trim()) +
+      '&gsrlimit=2' +
+      '&prop=extracts|revisions' +
+      '&exintro=1' +
+      '&explaintext=1' +
+      '&exsentences=3' +
+      '&rvprop=content' +
+      '&rvslots=main' +
+      '&rvsection=0' +
+      '&redirects=1' +
+      '&format=json' +
+      '&origin=*';
+  }
+  /* Una sola peticion local aporta genero y, ademas, el texto de tienda del
+     Infobox/Categorias para confirmar que launcher de PC usa realmente el juego. */
+  function fetchLocalWikiInfo(title, lang) {
+    var code = wikiLang(lang || 'en');
+    var empty = { genre: '', platform: '', store: '' };
+    if (!String(title || '').trim() || code === 'en') return Promise.resolve(empty);
+    return fetchMetaJson(wikiLocalSectionUrl(code, title)).then(function (data) {
+      var page = pickBestPage(data, title, false);
+      if (!page) return empty;
+      var content = pageSectionContent(page);
+      var localGenre = extractInfoboxParam(content, ['genre', 'genero', 'género']);
+      var localPlatform = extractInfoboxParam(content, ['platform', 'platforms', 'plataforma', 'plataformas']);
+      var localStore = extractInfoboxParam(content, ['publisher', 'publishers', 'distributor',
+        'distributors', 'developer', 'desarrollador', 'distribuidora', 'editorial', 'editor']);
+      return {
+        genre: stripWikiMarkup([page.extract || '', localGenre].join(' · ')),
+        platform: stripWikiMarkup(localPlatform),
+        store: stripWikiMarkup([page.extract || '', localStore].join(' · '))
+      };
+    }).catch(function () { return empty; });
+  }
+  function fetchLocalSummary(title, lang) {
+    var code = wikiLang(lang || 'en');
+    if (code === 'en' || !String(title || '').trim()) return Promise.resolve('');
+    return fetchMetaJson(wikiExtractSearchUrl(code, title)).then(function (data) {
+      return cleanSummary(firstExtract(data, title), 2);
+    }).catch(function () { return ''; });
+  }
+
+  /* El contenido de rvsection=0 puede venir en slots.main (MediaWiki actual) o
+     en revisions[0]['*'] (formatos antiguos). */
+  function pageSectionContent(page) {
+    var rev = page && page.revisions && page.revisions[0];
+    if (!rev) return '';
+    if (rev.slots && rev.slots.main) return String(rev.slots.main['*'] || rev.slots.main.content || '');
+    return String(rev['*'] || rev.content || '');
+  }
+  function stripWikiMarkup(value) {
+    var s = String(value || '');
+    for (var pass = 0; pass < 3; pass++) {
+      s = s.replace(/<ref[^>]*\/>|<ref[^>]*>[\s\S]*?<\/ref>/gi, ' ')
+        .replace(/\[\[(?:[^\]|]*\|)?([^\]]*)\]\]/g, '$1')
+        .replace(/\{\{\s*(?:nowrap|small|nbsp|nolink)\s*\|([^{}]*)\}\}/gi, '$1')
+        .replace(/\{\{[^{}]*\}\}/g, ' ')
+        .replace(/\[https?:\/\/[^\s\]]+\s+([^\]]*)\]/g, '$1');
+    }
+    return s.replace(/'''?/g, '').replace(/<[^>]*>/g, ' ')
+      .replace(/&nbsp;/gi, ' ').replace(/[\r\n]+/g, ' ')
+      .replace(/\s+/g, ' ').trim();
+  }
+  function infoboxBody(content) {
+    var s = String(content || '');
+    var m = /\{\{\s*(?:Infobox\s+video\s+game|Infobox\s+VG)\b/i.exec(s);
+    if (!m) return s;
+    var start = m.index + m[0].length, depth = 0, i;
+    for (i = start; i < s.length - 1; i++) {
+      var a = s.charAt(i), b = s.charAt(i + 1);
+      if (a === '{' && b === '{') { depth++; i++; }
+      else if (a === '}' && b === '}') {
+        if (depth === 0) return s.slice(start, i);
+        depth--; i++;
+      }
+    }
+    return s.slice(start);
+  }
+  function deaccent(s) {
+    return String(s || '').toLowerCase().normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+  }
+  /* Lee el parámetro exacto del Infobox (en: "genre", es: "género"/"genero").
+     Los `|` de nivel superior se separan en líneas para soportar infoboxes
+     escritos en una sola línea sin confundir los `|` de plantillas anidadas. */
+  function extractInfoboxParam(content, names) {
+    var body = infoboxBody(content), normalized = '', depth = 0, i;
+    for (i = 0; i < body.length; i++) {
+      var pair = body.substr(i, 2);
+      if (pair === '{{') { depth++; normalized += pair; i++; }
+      else if (pair === '}}') { depth = Math.max(0, depth - 1); normalized += pair; i++; }
+      else if (body.charAt(i) === '|' && depth === 0) normalized += '\n|';
+      else normalized += body.charAt(i);
+    }
+    var lines = normalized.split(/\r?\n/);
+    var wanted = (names || []).map(function (n) { return deaccent(n); });
+    for (var i = 0; i < lines.length; i++) {
+      var m = /^\s*\|\s*([^=|]+?)\s*=\s*([\s\S]*)$/.exec(lines[i]);
+      if (!m) continue;
+      var name = deaccent(stripWikiMarkup(m[1])).replace(/\s+/g, '');
+      if (wanted.indexOf(name) === -1) continue;
+      var value = m[2], j = i + 1;
+      while (j < lines.length && !/^\s*(?:\||\}\})/.test(lines[j])) {
+        value += ' ' + lines[j].trim(); j++;
+      }
+      return stripWikiMarkup(value);
+    }
+    return '';
+  }
+  function categoriesText(categories) {
+    return (categories || []).map(function (c) {
+      var s = typeof c === 'string' ? c : ((c && c.title) || '');
+      return String(s).replace(/^(?:Category|Categoría):/i, '').replace(/_/g, ' ');
+    }).join(' · ');
   }
 
   function firstExtract(data, wanted) {
@@ -644,35 +966,61 @@
     return parts.join(' ').slice(0, 300).trim();
   }
 
-  /* Palabras clave del extracto/categorias en ingles mapeadas al selector de generos. */
+  /* PRIORIDAD 1: los subgéneros híbridos se detectan ANTES y se enmascaran en el
+     texto. Así "survival horror" no añade también survival + horror, pero un
+     "third-person shooter" o una "action" mención independiente sí se conserva. */
+  var HYBRID_HINTS = [
+    { key: 'survival_horror', re: /\bsurvival[\s-]+horror\b|\bterror[\s-]+y[\s-]+supervivencia\b|\bsupervivencia[\s-]+y[\s-]+terror\b|\bhorror[\s-]+de[\s-]+supervivencia\b/gi },
+    { key: 'action_adventure', re: /\baction[\s-]*(?:&|and|y)?[\s-]*adventure\b|\badventure[\s-]*(?:&|and|y)?[\s-]*action\b|\bacci[oó]n[\s-]+y[\s-]+aventura\b|\baventura[\s-]+y[\s-]+acci[oó]n\b/gi },
+    { key: 'action_rpg', re: /\baction[\s-]+(?:role[\s-]*playing|rpg)\b|\b(?:role[\s-]*playing|rpg)[\s-]+action\b|\brpg[\s-]+de[\s-]+acci[oó]n\b|\bacci[oó]n[\s-]+rpg\b/gi },
+    { key: 'tactical_rpg', re: /\b(?:tactical|strategy)[\s-]+(?:role[\s-]*playing|rpg)\b|\b(?:role[\s-]*playing|rpg)[\s-]+(?:tactical|strategy)\b|\brol[\s-]+t[aá]ctico\b|\brpg[\s-]+t[aá]ctico\b/gi },
+    { key: 'puzzle_platformer', re: /\bpuzzle[\s-]+platform(?:er|ers|ing)?\b|\bplatform[\s-]+puzzle\b|\bpuzzle[\s-]+plataformas\b|\bplataformas[\s-]+de[\s-]+puzzle\b/gi }
+  ];
+
+  /* Generos complementarios en ingles y español. Se aplican al texto ya sin
+     híbridos para capturar también Shooter y Accion en un Survival Horror. */
   var GENRE_HINTS = [
-    { key: 'rpg', re: /\brpgs?\b|\bjrpgs?\b|role[- ]playing|turn[- ]based|soulslike/i },
-    { key: 'horror', re: /horror|psychological thriller/i },
-    { key: 'fighting', re: /fighting games?|\bfighters?\b|beat ['’]em up|hack and slash/i },
-    { key: 'racing', re: /racing|motorsport|driving games?/i },
-    { key: 'shooter', re: /shooters?|\bfps\b|bullet hell|first[- ]person shooter|third[- ]person shooter/i },
-    { key: 'platformer', re: /platformers?|platform games?|metroidvania|side[- ]scrolling|jump[- ]and[- ]run/i },
-    { key: 'puzzle', re: /puzzles?|logic games?|brain teaser|match[- ]three/i },
-    { key: 'strategy', re: /strategy|tactical|\brts\b|real[- ]time strategy|4x\b/i },
-    { key: 'sports', re: /sports? games?|association football|football|basketball|soccer|baseball|tennis|golf/i },
-    { key: 'simulation', re: /simulation|simulator|sandbox|farming sim|life sim/i },
-    { key: 'adventure', re: /adventure games?|visual novels?|interactive fiction|point[- ]and[- ]click|narrative/i },
-    { key: 'action', re: /\baction\b|action[- ]adventure/i },
+    { key: 'survival', re: /survival (?:video )?games?|supervivencia/i },
+    { key: 'sandbox', re: /\bsandbox\b|sandbox games?/i },
+    { key: 'open_world', re: /open[- ]world(?:\s+games?)?|mundo abierto/i },
+    { key: 'metroidvania', re: /metroid[- ]?vania/i },
+    { key: 'roguelike', re: /rogue[- ]?(?:likes?|lites?)/i },
+    { key: 'soulslike', re: /souls[- ]?likes?/i },
+    { key: 'stealth', re: /stealth games?|\bstealth\b|sigilo/i },
+    { key: 'visual_novel', re: /visual novels?|novela[ss]? visuales?/i },
+    { key: 'rhythm', re: /rhythm games?|\brhythm\b|music(?:al)? games?|\bmusical\b/i },
+    { key: 'mmo', re: /massively multiplayer|mmorpgs?|\bmmos?\b/i },
+    { key: 'rpg', re: /\brpgs?\b|\bjrpgs?\b|role[- ]playing|turn[- ]based|juegos? de rol/i },
+    { key: 'horror', re: /horror|terror|psychological thriller/i },
+    { key: 'fighting', re: /fighting games?|\bfighters?\b|beat ['’]em up|hack and slash|peleas/i },
+    { key: 'racing', re: /racing|motorsport|driving games?|carreras/i },
+    { key: 'shooter', re: /shooters?|\bfps\b|bullet hell|first[- ]person shooter|third[- ]person shooter|disparos|tiro(?:s)?/i },
+    { key: 'platformer', re: /platformers?|platform games?|side[- ]scrolling|jump[- ]and[- ]run|plataformas/i },
+    { key: 'puzzle', re: /puzzles?|logic games?|brain teaser|match[- ]three|rompecabezas/i },
+    { key: 'strategy', re: /strategy|tactical|\brts\b|real[- ]time strategy|4x\b|estrategia/i },
+    { key: 'sports', re: /sports? games?|association football|football|basketball|soccer|baseball|tennis|golf|deportes/i },
+    { key: 'simulation', re: /simulation|simulator|farming sim|life sim|simulaci[oó]n/i },
+    { key: 'adventure', re: /adventure games?|interactive fiction|point[- ]and[- ]click|narrative|aventura/i },
+    { key: 'action', re: /\baction\b|\bacci[oó]n\b/i },
     { key: 'indie', re: /\bindie\b|independent games?/i }
   ];
 
-  /* Recopila TODOS los generos presentes en el extracto y en las categorias. */
-  function detectGenres(extract, categories) {
-    var cats = (categories || []).map(function (c) {
-      return typeof c === 'string' ? c : ((c && c.title) || '');
-    }).join(' ');
-    var text = String(extract || '') + ' ' + cats;
+  /* Recopila TODOS los géneros de todas las fuentes (infobox, categorías,
+     extracto EN, etiquetas P136 y artículo ES), aplicando compactación híbrida. */
+  function detectGenres(sources) {
+    var text = (sources || []).map(function (s) { return String(s || ''); }).join(' \n ');
     if (!text.trim()) return [];
     var out = [];
+    HYBRID_HINTS.forEach(function (hint) {
+      hint.re.lastIndex = 0;
+      var found = false;
+      text = text.replace(hint.re, function () { found = true; return ' '; });
+      if (found && out.indexOf(hint.key) === -1) out.push(hint.key);
+    });
     GENRE_HINTS.forEach(function (hint) {
       if (hint.re.test(text) && out.indexOf(hint.key) === -1) out.push(hint.key);
     });
-    return out;
+    return compactGenres(out);
   }
   function bestClaim(claims, prop) {
     var arr = claims && claims[prop];
@@ -705,59 +1053,374 @@
     return (a && a.value) || (b && b.value) || '';
   }
 
-  /* Sinopsis en el idioma activo: sitelink -> busqueda local -> Wikidata -> extracto EN. */
-  function localizedSummary(result, lang, title) {
-    var code = wikiLang(lang);
-    var wd = result.wikidata;
-    var fallback = result.wikidataDescription || result.enSummary || '';
-    if (code === 'en') return Promise.resolve(result.enSummary || fallback);
-    var sitelink = wd && wd.sitelinks && wd.sitelinks[code + 'wiki'];
-    var stitle = sitelink && sitelink.title;
-    if (stitle) {
-      return fetchJson(wikiExtractUrl(code, stitle)).then(function (data) {
-        return cleanSummary(firstExtract(data, stitle), 2) || fallback;
-      }).catch(function () { return fallback; });
+  /* ---------- plataformas del juego: P400 + Infobox/intro + remasterizaciones ---------- */
+
+  /* Los alias de buildAliases reconocen "PlayStation 4", "Windows", "Switch"...
+     en texto libre. Se excluyen términos demasiado genéricos para no inventar
+     plataformas que el texto no está nombrando realmente. */
+  var PLATFORM_ALIAS_SKIP = {
+    playstation: 1, xbox: 1, ds: 1, gb: 1, vita: 1, deck: 1,
+    emulator: 1, emulador: 1, retro: 1, ea: 1,
+    'other launcher': 1, 'otro launcher': 1, 'outro launcher': 1,
+    'autre lanceur': 1, 'altro launcher': 1, 'anderer launcher': 1,
+    'другой лаунчер': 1, 'その他のランチャー': 1
+  };
+  var platformTextCache = null;
+  function platformTextEntries() {
+    if (platformTextCache) return platformTextCache;
+    if (!aliasCache) aliasCache = buildAliases();
+    var map = {};
+    Object.keys(aliasCache).forEach(function (alias) {
+      if (alias.length < 2 || PLATFORM_ALIAS_SKIP[alias]) return;
+      var key = null;
+      (aliasCache[alias] || []).forEach(function (v) {
+        if (key) return;
+        var k = v.slice(2);
+        if ((v.indexOf('p:') === 0 || v.indexOf('o:') === 0) && PLATFORM_KEYS.indexOf(k) !== -1) key = k;
+      });
+      if (!key) return;
+      var phrase = normTitle(alias);
+      if (phrase.length < 2) return;
+      if (!map[phrase]) map[phrase] = [];
+      if (map[phrase].indexOf(key) === -1) map[phrase].push(key);
+    });
+    platformTextCache = Object.keys(map).sort(function (a, b) { return b.length - a.length; })
+      .map(function (phrase) { return { phrase: ' ' + phrase + ' ', keys: map[phrase] }; });
+    return platformTextCache;
+  }
+  function platformKeysFromText(sources) {
+    var text = ' ' + normTitle((sources || []).join(' ')) + ' ';
+    var found = [];
+    platformTextEntries().forEach(function (entry) {
+      var pos = text.indexOf(entry.phrase);
+      if (pos === -1) return;
+      entry.keys.forEach(function (k) {
+        var hit = null, i;
+        for (i = 0; i < found.length; i++) if (found[i].key === k) { hit = found[i]; break; }
+        if (!hit) found.push({ key: k, pos: pos });
+        else if (pos < hit.pos) hit.pos = pos;
+      });
+    });
+    /* El orden de aparición en el texto respeta "lanzamiento original, ports". */
+    found.sort(function (a, b) { return a.pos - b.pos; });
+    return found.map(function (f) { return f.key; });
+  }
+  function platformKeysFromQids(qids) {
+    var out = [];
+    (qids || []).forEach(function (qid) {
+      PLATFORM_KEYS.forEach(function (k) {
+        var allowed = WIKIDATA_PLATFORM_QIDS[k] || [];
+        if (allowed.indexOf(qid) !== -1 && out.indexOf(k) === -1) out.push(k);
+      });
+    });
+    return out;
+  }
+  function wikidataSearchUrl(search) {
+    return WD_API +
+      '?action=wbsearchentities' +
+      '&search=' + encodeQ(search) +
+      '&language=en' +
+      '&uselang=en' +
+      '&type=item' +
+      '&limit=5' +
+      '&format=json' +
+      '&origin=*';
+  }
+  /* Solo ediciones "Remastered"/"HD" del MISMO título: "Remake" y
+     "Reimagined" se descartan estrictamente en título y descripción. */
+  function isRemasterCandidate(title, base) {
+    var s = String(title || '');
+    if (!/\bremaster(?:ed|ing)?\b|\bhd\b/i.test(s)) return false;
+    if (/\b(?:remake|remakes|reimagined|reimagining)\b/i.test(s)) return false;
+    var b = titleBase(base), t = titleBase(s);
+    if (!b || !t || t.indexOf(b) !== 0) return false;
+    var suffix = t.slice(b.length).trim();
+    return /^(?:remaster(?:ed|ing)?|hd)(?:\s+(?:edition|version))?$/.test(suffix);
+  }
+  function mergeRemaster(list) {
+    var qids = [], text = [];
+    (list || []).forEach(function (r) {
+      if (!r) return;
+      (r.qids || []).forEach(function (q) { if (qids.indexOf(q) === -1) qids.push(q); });
+      if (r.text) text.push(r.text);
+    });
+    return { qids: qids, text: text.join(' · ') };
+  }
+  function remasterFromWikiPages(data, base, lang) {
+    var pages = data && data.query && data.query.pages ? data.query.pages : {};
+    var list = Object.keys(pages).map(function (k) { return pages[k]; }).filter(function (p) {
+      return p && p.title && p.missing === undefined && isRemasterCandidate(p.title, base);
+    }).slice(0, 2);
+    return Promise.all(list.map(function (p) {
+      var qid = p.pageprops && p.pageprops.wikibase_item;
+      var text = [p.extract || '', extractInfoboxParam(pageSectionContent(p), ['platform', 'platforms'])].join(' ').trim();
+      if (!/^Q\d+$/.test(qid || '')) return Promise.resolve({ qids: [], text: text });
+      return fetchMetaJson(wikidataUrl(qid, lang, true)).then(function (payload) {
+        var entity = payload && payload.entities && payload.entities[qid];
+        if (/\b(?:remake|reimagined)\b/i.test(pickDescription(entity, lang))) return { qids: [], text: '' };
+        return { qids: entity ? wikidataClaimIds(entity.claims, 'P400') : [], text: text };
+      }).catch(function () { return { qids: [], text: text }; });
+    })).then(mergeRemaster);
+  }
+  /* Wikipedia y Wikidata se consultan en paralelo para encontrar la edición
+     remasterizada; cualquier fallo de red simplemente aporta cero plataformas. */
+  function fetchRemasterPlatforms(title, lang) {
+    var base = String(title || '').trim();
+    if (!base) return Promise.resolve({ qids: [], text: '' });
+    function wiki(suffix) {
+      return fetchMetaJson(wikiMetadataUrl(base + suffix, ''))
+        .then(function (data) { return remasterFromWikiPages(data, base, lang); })
+        .catch(function () { return { qids: [], text: '' }; });
     }
-    return fetchJson(wikiExtractSearchUrl(code, title)).then(function (data) {
-      return cleanSummary(firstExtract(data, title), 2) || fallback;
-    }).catch(function () { return fallback; });
+    var wd = fetchMetaJson(wikidataSearchUrl(base + ' Remastered')).then(function (data) {
+      var items = (data && data.search || []).filter(function (it) {
+        return it && isRemasterCandidate(it.label, base) &&
+          !/\b(?:remake|reimagined)\b/i.test(it.description || '');
+      }).slice(0, 2);
+      return Promise.all(items.map(function (it) {
+        return fetchMetaJson(wikidataUrl(it.id, lang, true)).then(function (payload) {
+          var entity = payload && payload.entities && payload.entities[it.id];
+          if (!entity || /\b(?:remake|reimagined)\b/i.test(pickDescription(entity, lang))) {
+            return { qids: [], text: '' };
+          }
+          return { qids: wikidataClaimIds(entity.claims, 'P400'), text: '' };
+        }).catch(function () { return { qids: [], text: '' }; });
+      })).then(mergeRemaster);
+    }).catch(function () { return { qids: [], text: '' }; });
+    return Promise.all([wiki(' Remastered'), wiki(' HD'), wd]).then(mergeRemaster);
+  }
+  /* ---------- clientes de PC: solo la tienda realmente confirmada ----------
+     P750/P123 de Wikidata y el Infobox/texto de Wikipedia se convierten en
+     etiquetas; cada etiqueta apunta a UN unico launcher. Sin señal de tienda
+     solo se ofrecen las opciones abiertas (Steam, GOG y Otro launcher). Los
+     clientes propietarios (EA, Battle.net, Ubisoft, Xbox y Riot) exigen una
+     confirmacion explicita. */
+  var PC_LAUNCHER_FALLBACK_KEYS = ['pcSteam', 'pcGog', 'pcOtherLauncher'];
+  var PC_STORE_MARKERS = [
+    { key: 'pcSteam', re: /\bsteam\b|\bsteamworks\b|\bvalve corporation\b/i },
+    { key: 'pcEpic', re: /\bepic games(?: store| launcher)?\b|\bepic store\b/i },
+    { key: 'pcGog', re: /\bgog\.?com\b|\bgog\b|\bgood old games\b|\bgog galaxy\b/i },
+    { key: 'pcEa', re: /\bea app\b|\borigin\b|\belectronic arts\b|\bea games\b|\bea studios\b/i },
+    { key: 'pcBattleNet', re: /\bbattle\.?\s?net\b|\bblizzard(?: entertainment| north)?\b/i },
+    { key: 'pcUbisoft', re: /\bubisoft(?: connect| entertainment)?\b|\buplay\b/i },
+    { key: 'pcXboxApp', re: /\bmicrosoft store\b|\bmicrosoft games store\b|\bxbox game pass\b|\bpc game pass\b|\bgame pass\b|\bxbox app\b|\bxbox game studios\b|\bmicrosoft studios\b/i },
+    { key: 'pcRiot', re: /\briot games\b|\briot client\b/i }
+  ];
+  var EMULABLE_PLATFORM_KEYS = ['ps3', 'ps2', 'ps1', 'psp', 'switch', 'wiiU', 'wii',
+    'gamecube', 'n64', 'snes', 'n3ds', 'nds', 'gba', 'ps3Emulator', 'switchEmulator',
+    'retroEmulator', 'emulator', 'retro'];
+  function pcLaunchersFromEvidence(sources) {
+    var text = ' ' + String((sources || []).join(' · ')).replace(/[|]/g, ' ') + ' ';
+    var out = [];
+    PC_STORE_MARKERS.forEach(function (m) {
+      if (m.re.test(text) && out.indexOf(m.key) === -1) out.push(m.key);
+    });
+    return out;
+  }
+  function hasPcPlatformSignal(result) {
+    var qids = (result && (result.allPlatformQids || result.platformQids)) || [];
+    if (qids.some(function (q) { return PC_PLATFORM_QIDS.indexOf(q) !== -1; })) return true;
+    /* Solo P400 o el campo "platform" del Infobox acreditan PC/Windows: una
+       mencion a "Electronic Arts" o "Steam" en el texto no las inventa. */
+    var text = ' ' + String(((result && result.pcPlatformTextSources) || []).join(' · ')) + ' ';
+    return /\b(?:windows|microsoft windows|pc)\b/i.test(text);
+  }
+  function detectGamePlatforms(result, owned) {
+    var qids = result.allPlatformQids || result.platformQids || [];
+    var candidates = platformKeysFromQids(qids).concat(platformKeysFromText(result.platformTextSources));
+    var unique = [];
+    candidates.forEach(function (k) { if (unique.indexOf(k) === -1) unique.push(k); });
+    var hasPc = hasPcPlatformSignal(result);
+    var foundStores = hasPc ? pcLaunchersFromEvidence(result.storeEvidenceSources) : [];
+    var allowed = foundStores.length ? foundStores : PC_LAUNCHER_FALLBACK_KEYS;
+    var usable = unique.filter(function (k) {
+      if (PC_LAUNCHER_KEYS.indexOf(k) === -1) return true;
+      return hasPc && allowed.indexOf(k) !== -1;
+    });
+    if (owned.length) {
+      var matched = platformKeysMatchingOwned(usable, owned);
+      /* PC / Emulador solo si el usuario lo marco y el juego tiene version
+         emulable (consola retro soportada o PC). */
+      if (owned.indexOf('pcEmulator') !== -1 &&
+          (hasPc || usable.some(function (k) { return EMULABLE_PLATFORM_KEYS.indexOf(k) !== -1; }))) {
+        addPlatformOption(matched, 'pcEmulator');
+      }
+      return matched;
+    }
+    /* Sin consolas configuradas: un mismo QID mapea a varias variantes del
+       hardware (PS4 y PS4 / Emulador, o todos los launchers de PC). Mostramos
+       una sola opción por familia para no inundar el datalist. */
+    var out = [];
+    var pcRepresentative = foundStores.length ? foundStores[0] : 'pcSteam';
+    usable.forEach(function (k) {
+      if (/Emulator$/.test(k)) return;
+      if (PC_LAUNCHER_KEYS.indexOf(k) !== -1) k = pcRepresentative;
+      if (PC_RUNTIME_KEYS.indexOf(k) !== -1 && k !== 'pcEmulator') k = pcRepresentative;
+      if (out.indexOf(k) === -1) out.push(k);
+    });
+    return out;
   }
 
-  function collectMetadata(title, lang) {
-    var result = {};
-    return fetchJson(wikiMetadataUrl(title)).then(function (data) {
-      var page = pickBestPage(data, title, false);
-      if (!page) return result;
-      if (page.thumbnail && page.thumbnail.source) result.cover = page.thumbnail.source;
-      result.genres = detectGenres(page.extract, page.categories);
-      result.genre = result.genres[0] || '';
-      result.enSummary = cleanSummary(page.extract, 2);
-      var qid = page.pageprops && page.pageprops.wikibase_item;
-      if (!qid || !/^Q\d+$/.test(qid)) return result;
-      return fetchJson(wikidataUrl(qid, lang, true)).then(function (payload) {
+  /* Rama Wikidata: resuelve el QID (prioriza el pageprops de Wikipedia EN), lee
+     la entidad y obtiene las etiquetas de P178/P123/P750/P136/P400 de una sola
+     tanda. Todo vive en una única promesa para que el allSettled final espere. */
+  function fetchWikidataBranch(title, lang, qidFromEn) {
+    var bySearch = fetchMetaJson(wikidataSearchUrl(title)).then(function (data) {
+      var items = (data && data.search) || [];
+      var exact = items.filter(function (it) {
+        return it && it.id && (normTitle(it.label) === normTitle(title) ||
+          titleBase(it.label) === titleBase(title));
+      })[0] || items[0];
+      return exact && /^Q\d+$/.test(exact.id) ? exact.id : '';
+    }).catch(function () { return ''; });
+    return Promise.allSettled([bySearch, qidFromEn]).then(function (found) {
+      var qid = (found[1].status === 'fulfilled' && /^Q\d+$/.test(found[1].value || ''))
+        ? found[1].value
+        : ((found[0].status === 'fulfilled' && /^Q\d+$/.test(found[0].value || '')) ? found[0].value : '');
+      if (!qid) return null;
+      return fetchMetaJson(wikidataUrl(qid, lang, true)).then(function (payload) {
         var entity = payload && payload.entities && payload.entities[qid];
-        if (!entity) return result;
-        result.wikidata = entity;
-        result.wikidataDescription = cleanSummary(pickDescription(entity, lang), 2);
-        result.platformQids = wikidataClaimIds(entity.claims, 'P400');
+        if (!entity) return null;
+        var branch = {
+          qid: qid,
+          entity: entity,
+          wikidataDescription: cleanSummary(pickDescription(entity, lang), 2),
+          platformQids: wikidataClaimIds(entity.claims, 'P400'),
+          genreQids: wikidataClaimIds(entity.claims, 'P136', true),
+          /* P750 "distributed by" y P123 "publisher" confirman la tienda real. */
+          distributorQids: wikidataClaimIds(entity.claims, 'P750'),
+          publisherQids: wikidataClaimIds(entity.claims, 'P123')
+        };
         var dateValue = claimValue(entity.claims, 'P577');
-        var rel = parseWikidate(dateValue && dateValue.time ? dateValue.time : dateValue);
-        if (rel) result.releaseDate = rel;
-        var dev = claimValue(entity.claims, 'P178');
-        var devId = dev && dev.id ? dev.id : '';
-        if (!/^Q\d+$/.test(devId)) return result;
-        return fetchJson(wikidataUrl(devId, lang, false)).then(function (devPayload) {
-          var studio = devPayload && devPayload.entities && devPayload.entities[devId];
-          var name = pickLabel(studio, lang);
-          if (name) result.developer = name.slice(0, 80);
-          return result;
-        }).catch(function () { return result; });
-      }).catch(function () { return result; });
-    }).then(function () {
-      return localizedSummary(result, lang, title).then(function (s) {
-        result.summary = s;
-        return result;
+        branch.releaseDate = parseWikidate(dateValue && dateValue.time ? dateValue.time : dateValue);
+        var devValue = claimValue(entity.claims, 'P178');
+        branch.developerQid = (devValue && devValue.id && /^Q\d+$/.test(devValue.id)) ? devValue.id : '';
+        var ids = branch.genreQids.concat(branch.platformQids, branch.distributorQids, branch.publisherQids);
+        if (branch.developerQid) ids.push(branch.developerQid);
+        ids = ids.filter(function (v, i) { return ids.indexOf(v) === i; });
+        if (!ids.length) { branch.labels = {}; return branch; }
+        return fetchWikidataLabels(ids, lang).then(function (labels) {
+          function addLabel(list, value) { if (value && list.indexOf(value) === -1) list.push(value); }
+          branch.labels = labels;
+          branch.developer = labelFromMap(labels, branch.developerQid).slice(0, 80);
+          branch.genreLabels = [];
+          branch.platformLabels = [];
+          branch.genreQids.forEach(function (id) {
+            var v = labels[id];
+            if (!v) return;
+            addLabel(branch.genreLabels, v.preferred);
+            addLabel(branch.genreLabels, v.en);
+          });
+          branch.platformQids.forEach(function (id) {
+            var v = labels[id];
+            if (!v) return;
+            addLabel(branch.platformLabels, v.preferred);
+            addLabel(branch.platformLabels, v.en);
+          });
+          branch.distributorLabels = [];
+          branch.publisherLabels = [];
+          branch.distributorQids.forEach(function (id) {
+            var v = labels[id];
+            if (!v) return;
+            addLabel(branch.distributorLabels, v.preferred);
+            addLabel(branch.distributorLabels, v.en);
+          });
+          branch.publisherQids.forEach(function (id) {
+            var v = labels[id];
+            if (!v) return;
+            addLabel(branch.publisherLabels, v.preferred);
+            addLabel(branch.publisherLabels, v.en);
+          });
+          return branch;
+        });
       });
+    }).catch(function () { return null; });
+  }
+
+  /* Un solo clic = todas las fuentes lanzadas a la vez y un único allSettled.
+     El formulario no se toca hasta que todas han terminado (o han fallado). */
+  function collectMetadata(title, lang, withRemasters) {
+    var result = { genreSources: [], platformTextSources: [], pcPlatformTextSources: [],
+      storeEvidenceSources: [], platformQids: [], allPlatformQids: [] };
+    var enBranch = fetchMetaJson(wikiMetadataUrl(title)).catch(function () { return null; });
+    var qidFromEn = enBranch.then(function (data) {
+      var page = pickBestPage(data, title, false);
+      var qid = page && page.pageprops && page.pageprops.wikibase_item;
+      return (qid && /^Q\d+$/.test(qid)) ? qid : '';
+    });
+    var branches = [
+      enBranch,                                                              // Wikipedia EN
+      fetchWikidataBranch(title, lang, qidFromEn),                            // Wikidata + P577/P178/P136/P400
+      fetchLocalSummary(title, lang),                                        // Sinopsis en el idioma activo
+      fetchLocalWikiInfo(title, lang),                                       // Genero + tienda del Infobox local
+      withRemasters !== false ? fetchRemasterPlatforms(title, lang) : Promise.resolve({ qids: [], text: '' }),
+      fetchCoverRaw(title).catch(function () { return ''; })                  // Portada (sin segunda fase)
+    ];
+    return Promise.allSettled(branches).then(function (settled) {
+      var enPage = settled[0].status === 'fulfilled' ? settled[0].value : null;
+      var wd = settled[1].status === 'fulfilled' ? settled[1].value : null;
+      var localSummary = settled[2].status === 'fulfilled' ? settled[2].value : '';
+      var localInfo = settled[3].status === 'fulfilled' ? settled[3].value : null;
+      var remaster = settled[4].status === 'fulfilled' ? settled[4].value : { qids: [], text: '' };
+      var cover = settled[5].status === 'fulfilled' ? settled[5].value : '';
+
+      if (enPage) {
+        if (enPage.thumbnail && enPage.thumbnail.source) result.cover = enPage.thumbnail.source;
+        result.enSummary = cleanSummary(enPage.extract, 2);
+        var pageContent = pageSectionContent(enPage);
+        var infoboxPlatforms = extractInfoboxParam(pageContent, ['platform', 'platforms', 'plataforma', 'plataformas']);
+        if (enPage.extract) result.platformTextSources.push(enPage.extract);
+        if (infoboxPlatforms) {
+          result.platformTextSources.push(infoboxPlatforms);
+          result.pcPlatformTextSources.push(infoboxPlatforms);
+        }
+        result.genreSources.push(enPage.extract || '', categoriesText(enPage.categories));
+        var infoboxGenre = extractInfoboxParam(pageContent, ['genre']);
+        if (infoboxGenre) result.genreSources.push(infoboxGenre);
+        /* La tienda/confirmadora puede venir en el Infobox, el texto o las
+           categorias de Wikipedia ("Steam games", "Xbox Game Pass games"...). */
+        var infoboxStores = extractInfoboxParam(pageContent, ['publisher', 'publishers',
+          'distributor', 'distributors', 'developer', 'developed by']);
+        if (infoboxStores) result.storeEvidenceSources.push(infoboxStores);
+        if (enPage.extract) result.storeEvidenceSources.push(enPage.extract);
+        if (enPage.categories) result.storeEvidenceSources.push(categoriesText(enPage.categories));
+      }
+      if (cover && !result.cover) result.cover = cover;
+      if (localInfo) {
+        if (localInfo.genre) result.genreSources.push(localInfo.genre);
+        if (localInfo.platform) {
+          result.platformTextSources.push(localInfo.platform);
+          result.pcPlatformTextSources.push(localInfo.platform);
+        }
+        if (localInfo.store) result.storeEvidenceSources.push(localInfo.store);
+      }
+
+      if (wd) {
+        result.wikidata = wd.entity;
+        result.wikidataDescription = wd.wikidataDescription;
+        result.releaseDate = wd.releaseDate || '';
+        result.developer = wd.developer || '';
+        result.platformQids = (wd.platformQids || []).slice();
+        result.allPlatformQids = result.platformQids.slice();
+        result.wikidataGenreQids = wd.genreQids || [];
+        result.wikidataGenreLabels = wd.genreLabels || [];
+        if (wd.genreLabels && wd.genreLabels.length) result.genreSources.push(wd.genreLabels.join(' · '));
+        if (wd.platformLabels && wd.platformLabels.length) {
+          result.platformTextSources.push(wd.platformLabels.join(' · '));
+          result.pcPlatformTextSources.push(wd.platformLabels.join(' · '));
+        }
+        if (wd.distributorLabels && wd.distributorLabels.length) result.storeEvidenceSources.push(wd.distributorLabels.join(' · '));
+        if (wd.publisherLabels && wd.publisherLabels.length) result.storeEvidenceSources.push(wd.publisherLabels.join(' · '));
+        if (wd.developer) result.storeEvidenceSources.push(wd.developer);
+      }
+      (remaster.qids || []).forEach(function (q) {
+        if (result.allPlatformQids.indexOf(q) === -1) result.allPlatformQids.push(q);
+      });
+      if (remaster.text) result.platformTextSources.push(remaster.text);
+      result.genres = detectGenres(result.genreSources);
+      result.genre = result.genres[0] || '';
+      result.summary = cleanSummary(localSummary, 2) || result.wikidataDescription || result.enSummary || '';
+      return result;
     });
   }
 
@@ -789,36 +1452,52 @@
       renderCoverPreview();
       done.push(t('meta.cover'));
     }
-    var foundGenres = (result.genres && result.genres.length) ? result.genres : (result.genre ? [result.genre] : []);
+    var foundGenres = compactGenres((result.genres && result.genres.length) ? result.genres : (result.genre ? [result.genre] : []));
     if (foundGenres.length) {
-      foundGenres.forEach(function (k) {
-        if (editGenres.indexOf(k) === -1) editGenres.push(k);
-      });
+      /* Compacta también lo que ya había en el editor: si llega Survival Horror,
+         retira un Supervivencia/Terror seleccionados previamente. */
+      editGenres = compactGenres(editGenres.concat(foundGenres));
       renderGenreChips();
       done.push(foundGenres.map(function (k) { return displayValue('g', k); }).join(', '));
     }
     if (result.releaseDate) { $('e-release').value = result.releaseDate; done.push(result.releaseDate); }
     if (result.developer) { $('e-dev').value = result.developer; done.push(result.developer); }
     if (result.summary) { $('e-summary').value = result.summary; done.push(t('meta.summary')); }
+    /* Selector inteligente: original + ports/remasterizaciones ∩ Mis Consolas.
+       El scraper SOLO filtra las opciones: nunca preselecciona ni rellena el
+       campo, que queda vacío (con su placeholder) para que el usuario elija. */
+    if (result.allPlatformQids || (result.platformTextSources && result.platformTextSources.length)) {
+      var owned = ownedConfigured() ? effectiveOwnedKeys() : [];
+      var matched = detectGamePlatforms(result, owned);
+      if (matched.length) {
+        /* Al editar, la plataforma ya guardada sigue disponible en la lista
+           aunque el scraper no la detecte; su valor no se sobrescribe nunca. */
+        var detected = matched.map(function (k) { return displayValue('p', k); }).join(', ');
+        var currentKey = keyOf('p', $('e-plat').value.trim());
+        if (PLATFORM_KEYS.indexOf(currentKey) !== -1 && matched.indexOf(currentKey) === -1) matched.push(currentKey);
+        setPlatformOptions(matched, 'editor.platformFiltered', true);
+        done.push(t('meta.platforms') + ': ' + detected);
+      } else {
+        setPlatformOptions(null, 'editor.platformNoMatch', false);
+      }
+    }
     if (done.length) showAutofillMsg(t('editor.autofillDone', { list: done.join(', ') }), 'ok');
     else showAutofillMsg(t('editor.autofillNothing', { lang: I.languageName ? I.languageName(lang) : lang }), 'warn');
   }
   function autofillMetadata() {
     var title = $('e-title').value.trim();
     if (!title) { $('e-err').textContent = t('editor.errTitle'); $('e-title').focus(); return; }
+    /* Un clic: mientras están todas las consultas en vuelo, el botón sigue
+       deshabilitado y no se acumulan búsquedas parciales. */
+    if ($('e-autofill') && $('e-autofill').disabled) return;
     var token = ++metaSearchId;
     var lang = I.lang ? I.lang() : I.current();
     setAutofillBusy(true);
     showAutofillMsg(t('editor.autofillSearching', { lang: I.languageName ? I.languageName(lang) : lang }), 'searching');
     $('e-err').textContent = '';
+    /* collectMetadata ya ha esperado a Wikipedia, Wikidata, idioma activo,
+       remasterizaciones y portada. Aplicamos todo de una sola vez. */
     collectMetadata(title, lang).then(function (result) {
-      if (token !== metaSearchId) return null;
-      if (result.cover) return result;
-      return fetchCoverRaw(title).then(function (src) {
-        if (src) result.cover = src;
-        return result;
-      }).catch(function () { return result; });
-    }).then(function (result) {
       if (result && token === metaSearchId) applyMetadata(result, lang);
     }).catch(function () {
       if (token === metaSearchId) showAutofillMsg(t('editor.autofillError'), 'error');
@@ -942,8 +1621,9 @@
     if (el.value !== current) el.value = '';
   }
   function renderFilters() {
-    /* El filtro de plataforma ofrece el catalogo completo, no solo lo que haya en la biblioteca. */
-    var pl = PLATFORM_KEYS.slice(), ge = uniqValues('g');
+    /* Los filtros ofrecen el catalogo completo, no solo lo que haya en la biblioteca. */
+    var pl = PLATFORM_KEYS.slice(), ge = GENRE_KEYS.slice();
+    uniqValues('g').forEach(function (k) { if (ge.indexOf(k) === -1) ge.push(k); });
     if (state.f.plat && pl.indexOf(state.f.plat) === -1) state.f.plat = '';
     if (state.f.genre && ge.indexOf(state.f.genre) === -1) state.f.genre = '';
     fillSelect($('f-plat'), 'p', t('filter.platform'), pl, state.f.plat);
@@ -954,12 +1634,31 @@
     if (wrap) wrap.title = ownedConfigured() ? t('filter.ownedOnlyTitle', { list: ownedLabelList(effectiveOwnedKeys()).join(', ') }) : t('owned.allAssumed');
   }
   function fillDataLists() {
-    $('dl-plat').innerHTML = PLATFORM_KEYS.map(function (k) {
+    /* Respeta el filtro activo del editor; fuera de él se muestra el catálogo. */
+    var plats = platformOptions || PLATFORM_KEYS;
+    $('dl-plat').innerHTML = plats.map(function (k) {
       return '<option value="' + esc(t('platform.' + k)) + '"></option>';
     }).join('');
     $('dl-genre').innerHTML = GENRE_KEYS.map(function (k) {
       return '<option value="' + esc(t('genre.' + k)) + '"></option>';
     }).join('');
+  }
+  /* Pinta el datalist, la ayuda y el enlace "Ver todas las plataformas". */
+  function setPlatformOptions(keys, helpKey, showAll) {
+    platformOptions = (keys && keys.length) ? keys.slice() : null;
+    platformHelpKey = helpKey || '';
+    platformShowAll = !!showAll;
+    fillDataLists();
+    var help = $('e-plat-help');
+    if (help) {
+      help.textContent = platformHelpKey ? t(platformHelpKey) : '';
+      help.hidden = !platformHelpKey;
+    }
+    var link = $('e-plat-show-all');
+    if (link) {
+      link.textContent = t('editor.showAllPlatforms');
+      link.hidden = !platformShowAll;
+    }
   }
 
   function coverHtml(g, cls) {
@@ -1069,17 +1768,14 @@
   function renderGenreChips() {
     var box = $('e-genres');
     if (!box) return;
-    box.innerHTML = GENRE_KEYS.map(function (k) {
+    var keys = GENRE_KEYS.filter(function (k, i) { return GENRE_KEYS.indexOf(k) === i; });
+    box.innerHTML = keys.map(function (k) {
       var on = editGenres.indexOf(k) !== -1;
       return '<button class="genre-chip" type="button" data-genre-toggle="' + k + '" aria-pressed="' + on + '">' + esc(t('genre.' + k)) + '</button>';
     }).join('');
   }
   function setEditGenres(list) {
-    editGenres = [];
-    (list || []).forEach(function (v) {
-      var k = keyOf('g', v);
-      if (k && editGenres.indexOf(k) === -1) editGenres.push(k);
-    });
+    editGenres = compactGenres(list);
     renderGenreChips();
   }
   function toggleGenre(key) {
@@ -1144,6 +1840,16 @@
     var del = $('e-del');
     del.hidden = !g;
     resetDeleteButton();
+    /* Antes del scraper: el datalist solo ofrece el hardware del usuario. */
+    var platKeys = platformOptionsForOwned();
+    if (g && g.platform) {
+      var currentKey = keyOf('p', g.platform);
+      if (PLATFORM_KEYS.indexOf(currentKey) !== -1 && platKeys.indexOf(currentKey) === -1) platKeys.push(currentKey);
+    } else if (state.f.plat && platKeys.indexOf(state.f.plat) === -1) {
+      platKeys.push(state.f.plat);
+    }
+    var hasOwned = ownedConfigured() && effectiveOwnedKeys().length > 0;
+    setPlatformOptions(platKeys, hasOwned ? 'editor.platformFiltered' : '', hasOwned);
     setOverlay('ov-edit', true);
     setTimeout(function () { $('e-title').focus(); }, 0);
   }
@@ -1304,7 +2010,22 @@
     puzzle: ['Category:Puzzle video games'],
     indie: ['Category:Indie games'],
     fighting: ['Category:Fighting games'],
-    simulation: ['Category:Simulation video games']
+    simulation: ['Category:Simulation video games'],
+    survival: ['Category:Survival video games', 'Category:Survival games'],
+    survival_horror: ['Category:Survival horror video games', 'Category:Survival horror games'],
+    action_adventure: ['Category:Action-adventure games', 'Category:Action-adventure video games'],
+    action_rpg: ['Category:Action role-playing video games', 'Category:Action role-playing games'],
+    tactical_rpg: ['Category:Tactical role-playing video games', 'Category:Strategy role-playing video games'],
+    puzzle_platformer: ['Category:Puzzle platformers', 'Category:Puzzle platform video games'],
+    sandbox: ['Category:Sandbox games'],
+    open_world: ['Category:Open-world video games', 'Category:Open world video games'],
+    metroidvania: ['Category:Metroidvania games', 'Category:Metroidvania video games'],
+    roguelike: ['Category:Roguelike video games', 'Category:Roguelike games'],
+    soulslike: ['Category:Soulslike video games', 'Category:Soulslike games'],
+    stealth: ['Category:Stealth video games', 'Category:Stealth games'],
+    visual_novel: ['Category:Visual novels', 'Category:Visual novel games'],
+    rhythm: ['Category:Rhythm games', 'Category:Music video games'],
+    mmo: ['Category:Massively multiplayer online games', 'Category:MMORPGs']
   };
   var RECOMMEND_PLATFORM_CATEGORIES = {
     pcSteam: ['Category:Windows games', 'Category:PC games'],
@@ -1380,11 +2101,14 @@
     genesis: ['Q10676'],
     dreamcast: ['Q184198'],
     retroEmulator: ['Q10680', 'Q10677', 'Q170325', 'Q188642', 'Q186437', 'Q203992',
-      'Q184839', 'Q183259', 'Q172742', 'Q170323', 'Q203597', 'Q10676', 'Q184198']
+      'Q184839', 'Q183259', 'Q172742', 'Q170323', 'Q203597', 'Q10676', 'Q184198',
+      'Q182172', 'Q8079']
   };
-  /* Microsoft Windows (Q1406) y PC (Q1074923): mismo criterio P400 que PC / Steam. */
+  /* Microsoft Windows (Q1406), PC (Q1074923) y Steam Deck (Q107542665):
+     mismo criterio P400 que PC / Steam para TODOS los clientes de PC. */
+  var PC_PLATFORM_QIDS = ['Q1406', 'Q1074923', 'Q107542665'];
   PC_RUNTIME_KEYS.forEach(function (k) {
-    WIKIDATA_PLATFORM_QIDS[k] = ['Q1406', 'Q1074923'];
+    WIKIDATA_PLATFORM_QIDS[k] = PC_PLATFORM_QIDS.slice();
   });
 
   /* Los generos favoritos salen de completados/platino/pendientes; la nota personal pesa mas. */
@@ -1540,7 +2264,7 @@
     var rec = {
       title: String(title).trim(),
       cover: result.cover || '',
-      genres: rawGenres.map(function (k) { return keyOf('g', k); }).filter(Boolean),
+      genres: compactGenres(rawGenres),
       releaseDate: rel.releaseDate,
       releaseYear: rel.releaseYear,
       developer: result.developer || '',
@@ -1560,7 +2284,7 @@
     if (i >= Math.min(list.length, 10)) return Promise.resolve(null);
     var title = list[i];
     if (isSeen(title) || inCollection(title)) return tryRecommendCandidate(list, i + 1, token, lang);
-    return collectMetadata(title, lang).then(function (result) {
+    return collectMetadata(title, lang, false).then(function (result) {
       if (token !== recommendToken) return null;
       var useful = result && (result.cover || result.summary || result.releaseDate || result.developer ||
         (result.genres && result.genres.length));
@@ -1711,7 +2435,8 @@
       if (g.example && g.sampleSummaryKey) { g.summary = t(g.sampleSummaryKey); examplesChanged = true; }
     });
     if (examplesChanged) save();
-    fillDataLists();
+    /* Repinta el datalist con el filtro vigente y sus textos en el nuevo idioma. */
+    setPlatformOptions(platformOptions, platformHelpKey, platformShowAll);
     renderGenreChips();
     renderAll();
     if (!$('ov-recommend').hidden) {
@@ -1770,6 +2495,10 @@
   on('e-del', 'click', deleteEditorGame);
   on('e-cover-fetch', 'click', searchCover);
   on('e-autofill', 'click', autofillMetadata);
+  on('e-plat-show-all', 'click', function () {
+    setPlatformOptions(PLATFORM_KEYS.slice(), 'editor.platformAllShown', false);
+    $('e-plat').focus();
+  });
   on('e-cover-clear', 'click', function () {
     editCover = ''; editCoverSource = ''; coverMsg = '';
     $('e-cover-url').value = '';
@@ -1923,7 +2652,7 @@
     navigator.serviceWorker.addEventListener('controllerchange', reloadClean);
     purgeOldCaches().then(function (purged) {
       /* La query fuerza al navegador a descargar el SW nuevo sin usar su HTTP cache. */
-      return navigator.serviceWorker.register('./sw.js?v=1.0.9', { scope: './' })
+      return navigator.serviceWorker.register('./sw.js?v=1.1.6', { scope: './' })
         .then(function (registration) {
           if (purged) setTimeout(reloadClean, 200);
           return registration.update();
