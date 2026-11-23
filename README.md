@@ -24,7 +24,6 @@ Your game collection, backlog and played hours in one place. GameVault is a free
 - **Random picker:** pick a pending game at random, optionally filtered by platform, and start playing with one tap.
 - **Backups:** copy/export JSON or CSV and replace the library from a previously saved backup.
 - **PWA:** installable on iOS and Android with real PNG icons (180/192/512), web manifest, standalone display and a service worker (Network-First for HTML, offline cache for assets).
-- **GitHub Pages ready:** every path is relative, so it works from a repository subfolder.
 
 ## Install / Instalar
 
@@ -75,7 +74,6 @@ Tu colección de videojuegos, tu backlog y las horas jugadas en un único lugar.
 - **Ruleta aleatoria:** elige un juego pendiente al azar, con filtro opcional por plataforma, y empieza a jugar con un toque.
 - **Copias de seguridad:** copia/exporta JSON o CSV y reemplaza la biblioteca desde una copia guardada.
 - **PWA:** instalable en iOS y Android con iconos PNG reales (180/192/512), manifiesto web, modo independiente y service worker (Network-First para HTML, caché sin conexión para recursos).
-- **Lista para GitHub Pages:** todas las rutas son relativas, funciona incluso en una subcarpeta del repositorio.
 
 ### Instalación
 
