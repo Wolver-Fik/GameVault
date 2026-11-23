@@ -664,9 +664,24 @@
   function wikiApi(lang) { return 'https://' + wikiLang(lang) + '.wikipedia.org/w/api.php'; }
   function coverKey(title) { return String(title || '').trim().toLowerCase(); }
 
+  /* MediaWiki trata ":" como prefijo de namespace dentro de gsrsearch: un titulo
+     como "Grand Theft Auto: Vice City" busca en un namespace inexistente y la
+     consulta falla. En busqueda libre los dos puntos pasan a ser un espacio (y se
+     descartan otros operadores); el titulo ORIGINAL se reserva para las consultas
+     action=query&titles=..., que si aceptan los dos puntos. */
+  function sanitizeWikiSearch(s) {
+    return String(s == null ? '' : s)
+      .replace(/[\u2010-\u2015]/g, '-')
+      .replace(/[:]/g, ' ')
+      .replace(/[\[\]{}<>|#\\]/g, ' ')
+      .replace(/["']/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
   /* Toda peticion a MediaWiki lleva format=json y origin=* (obligatorio para CORS). */
   function wikiSearchUrl(lang, search) {
-    var q = encodeURIComponent(String(search || '').trim()).replace(/%20/g, '+');
+    var q = encodeURIComponent(sanitizeWikiSearch(search)).replace(/%20/g, '+');
     /* Sin pilicense=any MediaWiki oculta las caratulas fair use (casi todos los videojuegos). */
     return wikiApi(lang) +
       '?action=query' +
@@ -782,12 +797,15 @@
     if (!key) return Promise.resolve('');
     if (coverCache[key]) return Promise.resolve(coverCache[key]);
     var clean = String(title).trim();
+    var term = sanitizeWikiSearch(clean);
 
-    /* Cascada: 1) EN "titulo video game"  2) EN "titulo"  3) ES "titulo video game". */
+    /* Cascada: 0) titulo exacto (acepta ":")  1) EN "titulo video game"
+       2) EN "titulo"  3) ES "titulo video game". */
     var attempts = [
-      { lang: 'en', search: clean + ' video game' },
-      { lang: 'en', search: clean },
-      { lang: 'es', search: clean + ' video game' }
+      { lang: 'en', exact: clean },
+      { lang: 'en', search: term + ' video game' },
+      { lang: 'en', search: term },
+      { lang: 'es', search: term + ' video game' }
     ];
 
     function tryNext(i) {
@@ -796,7 +814,12 @@
         return Promise.resolve('');
       }
       var attempt = attempts[i];
-      return wikiSearch(attempt.lang, attempt.search, clean).then(function (src) {
+      var lookup = attempt.exact
+        ? fetchJson(wikiExactPageUrl(attempt.lang, attempt.exact, false)).then(function (data) {
+            return firstThumbnail(data, clean);
+          })
+        : wikiSearch(attempt.lang, attempt.search, clean);
+      return lookup.then(function (src) {
         if (src) { coverCache[key] = src; return src; }
         return tryNext(i + 1);
       }).catch(function () {
@@ -850,7 +873,8 @@
   /* Busqueda en Wikipedia EN: extracto, TODAS las categorias, seccion 0 del
      Infobox video game (campo "| genre = ..."), portada y entity-id de Wikidata. */
   function wikiMetadataUrl(title, suffix) {
-    var search = String(title).trim() + (suffix === undefined ? ' video game' : (suffix || ''));
+    var extra = suffix === undefined ? ' video game' : sanitizeWikiSearch(suffix);
+    var search = (sanitizeWikiSearch(title) + ' ' + extra).replace(/\s+/g, ' ').trim();
     return wikiApi('en') +
       '?action=query' +
       '&generator=search' +
@@ -864,6 +888,30 @@
       '&rvprop=content' +
       '&rvslots=main' +
       '&rvsection=0' +
+      '&piprop=thumbnail' +
+      '&pithumbsize=500' +
+      '&pilicense=any' +
+      '&format=json' +
+      '&origin=*';
+  }
+  /* Consulta DIRECTA por titulo exacto. A diferencia de gsrsearch, "titles="
+     no interpreta los dos puntos como namespace: "Grand Theft Auto: Vice City"
+     resuelve su articulo real, su portada y su pageprops.wikibase_item (QID). */
+  function wikiExactPageUrl(lang, title, full) {
+    return wikiApi(lang) +
+      '?action=query' +
+      '&titles=' + encodeQ(title) +
+      '&redirects=1' +
+      (full
+        ? '&prop=extracts|categories|revisions|pageimages|pageprops' +
+          '&exintro=1' +
+          '&explaintext=1' +
+          '&exsentences=3' +
+          '&cllimit=max' +
+          '&rvprop=content' +
+          '&rvslots=main' +
+          '&rvsection=0'
+        : '&prop=pageimages|pageprops') +
       '&piprop=thumbnail' +
       '&pithumbsize=500' +
       '&pilicense=any' +
@@ -886,7 +934,7 @@
     return wikiApi(lang) +
       '?action=query' +
       '&generator=search' +
-      '&gsrsearch=' + encodeQ(title) +
+      '&gsrsearch=' + encodeQ(sanitizeWikiSearch(title)) +
       '&gsrlimit=2' +
       '&prop=extracts' +
       '&exintro=1' +
@@ -965,7 +1013,7 @@
     return wikiApi(lang) +
       '?action=query' +
       '&generator=search' +
-      '&gsrsearch=' + encodeQ(String(title).trim()) +
+      '&gsrsearch=' + encodeQ(sanitizeWikiSearch(title)) +
       '&gsrlimit=2' +
       '&prop=extracts|revisions' +
       '&exintro=1' +
@@ -1337,7 +1385,7 @@
   function wikidataSearchUrl(search) {
     return WD_API +
       '?action=wbsearchentities' +
-      '&search=' + encodeQ(search) +
+      '&search=' + encodeQ(sanitizeWikiSearch(search)) +
       '&language=en' +
       '&uselang=en' +
       '&type=item' +
@@ -1594,15 +1642,30 @@
   function collectMetadata(title, lang, withRemasters) {
     var result = { genreSources: [], platformTextSources: [], pcPlatformTextSources: [],
       releasePlatformSources: [], storeEvidenceSources: [], platformQids: [], allPlatformQids: [] };
-    var enBranch = fetchMetaJson(wikiMetadataUrl(title)).catch(function () { return null; });
-    var qidFromEn = enBranch.then(function (data) {
+    var enSearch = fetchMetaJson(wikiMetadataUrl(title)).catch(function () { return null; });
+    /* En paralelo a gsrsearch (que falla con ":") se consulta el titulo exacto. */
+    var enExact = fetchMetaJson(wikiExactPageUrl('en', title, true)).catch(function () { return null; });
+    var enPages = Promise.all([enSearch, enExact]).then(function (payloads) {
+      var pages = {};
+      payloads.forEach(function (data, sourceIndex) {
+        var found = (data && data.query && data.query.pages) || {};
+        Object.keys(found).forEach(function (key) {
+          var page = found[key];
+          if (!page || page.missing !== undefined) return;
+          /* Si ambas fuentes devuelven la misma pagina gana la consulta exacta. */
+          if (!pages[key] || sourceIndex === 1) pages[key] = page;
+        });
+      });
+      return { query: { pages: pages } };
+    });
+    var qidFromEn = enPages.then(function (data) {
       var page = pickBestPage(data, title, false);
       var qid = page && page.pageprops && page.pageprops.wikibase_item;
       return (qid && /^Q\d+$/.test(qid)) ? qid : '';
     });
     var wdBranch = fetchWikidataBranch(title, lang, qidFromEn);
     var branches = [
-      enBranch,                                                              // Wikipedia EN
+      enPages,                                                               // Wikipedia EN (busqueda + titulo exacto)
       wdBranch,                                                              // Wikidata + P577/P178/P136/P400
       /* Usa el sitelink si existe; si no, busca y valida el título local. */
       wdBranch.then(function (wd) { return fetchLocalSummary(title, lang, wd && wd.localTitle); }),
@@ -1677,6 +1740,18 @@
         if (wd.distributorLabels && wd.distributorLabels.length) result.storeEvidenceSources.push(wd.distributorLabels.join(' · '));
         if (wd.publisherLabels && wd.publisherLabels.length) result.storeEvidenceSources.push(wd.publisherLabels.join(' · '));
         if (wd.developer) result.storeEvidenceSources.push(wd.developer);
+      }
+      /* Respecto de P178, el campo "| developer =" del Infobox es la reserva
+         cuando Wikidata no aporta etiqueta (o su rama falla). */
+      if (!result.developer && enPage) {
+        var infoboxDeveloper = extractInfoboxParam(pageSectionContent(enPage),
+          ['developer', 'developed by', 'desarrollador', 'desarrolladora']);
+        if (infoboxDeveloper) {
+          result.developer = infoboxDeveloper.slice(0, 80);
+          if (result.storeEvidenceSources.indexOf(infoboxDeveloper) === -1) {
+            result.storeEvidenceSources.push(infoboxDeveloper);
+          }
+        }
       }
       (remaster.qids || []).forEach(function (q) {
         if (result.allPlatformQids.indexOf(q) === -1) result.allPlatformQids.push(q);

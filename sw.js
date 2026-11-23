@@ -1,6 +1,6 @@
 /* GameVault service worker: Network-First for HTML, Cache-First for assets. */
-/* v1.2.3: vista compacta de géneros en el editor con enlace al catálogo completo. */
-var CACHE = 'gamevault-v1.2.3';
+/* v1.2.4: botones de acciones sin desbordamiento en móvil y búsquedas Wikipedia con ":" saneado. */
+var CACHE = 'gamevault-v1.2.4';
 var ROOT = new URL('./', self.registration.scope).href;
 var PRECACHE = [
   './',
