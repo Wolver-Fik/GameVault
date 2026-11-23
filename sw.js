@@ -1,6 +1,6 @@
 /* GameVault service worker: Network-First for HTML, Cache-First for assets. */
-/* v1.1.7: etiquetas de plataformas unificadas con "Mis Consolas" (siglas PlayStation, GBA y Retro / Emulador) y purga de las caches antiguas. */
-var CACHE = 'gamevault-v1.1.7';
+/* v1.1.8: selector de plataformas en dos niveles (Mis Consolas ∩ disponibilidad real / todas las plataformas del juego), sin launchers cerrados ajenos al juego y purga de las caches antiguas. */
+var CACHE = 'gamevault-v1.1.8';
 var ROOT = new URL('./', self.registration.scope).href;
 var PRECACHE = [
   './',

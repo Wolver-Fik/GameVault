@@ -306,10 +306,12 @@
     ,'owned.pcRiot': 'PC / Riot Client'
     ,'owned.pcOtherLauncher': 'PC / その他のランチャー'
     /* v1.1.2: 編集画面のスマートなプラットフォーム選択。 */
-    ,'editor.showAllPlatforms': 'すべてのプラットフォームを表示'
+    ,'editor.showAllPlatforms': 'このゲームのすべてのプラットフォームを表示'
+    ,'editor.showAllGamePlatforms': 'このゲームのすべてのプラットフォームを表示'
     ,'editor.platformFiltered': 'お持ちの本体とゲームの対応状況で絞り込み中'
     ,'editor.platformNoMatch': 'お持ちの本体と一致しませんでした。すべてのプラットフォームを表示します'
     ,'editor.platformAllShown': 'すべてのプラットフォームを表示中'
+    ,'editor.platformGameAllShown': 'このゲームのすべてのプラットフォームを表示しています'
     ,'meta.platforms': 'プラットフォーム'
   };
 })();

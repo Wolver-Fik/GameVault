@@ -2,8 +2,8 @@
 (function () {
   var STORAGE = window.GVStorage;
   var I = window.GVI18N;
-  var CACHE_NAME = 'gamevault-v1.1.7';
-  var RELOAD_FLAG = 'gv-cache-reload-v1.1.7';
+  var CACHE_NAME = 'gamevault-v1.1.8';
+  var RELOAD_FLAG = 'gv-cache-reload-v1.1.8';
 
   function t(key, vars) {
     if (!I || typeof I.t !== 'function') return String(key);
@@ -52,6 +52,10 @@
   var PC_LAUNCHER_KEYS = (STORAGE && Array.isArray(STORAGE.PC_LAUNCHER_KEYS))
     ? STORAGE.PC_LAUNCHER_KEYS.slice() : FALLBACK_PC_LAUNCHER_KEYS.slice();
   var PC_RUNTIME_KEYS = PC_LAUNCHER_KEYS.concat(['pcEmulator']);
+  /* Clientes abiertos: son los unicos que pueden representar un lanzamiento en
+     PC cuando Wikidata/Infobox no nombra una tienda concreta. EA, Battle.net,
+     Ubisoft, Xbox App y Riot jamas se infieren de un publisher/distributor. */
+  var PC_OPEN_LAUNCHER_KEYS = ['pcSteam', 'pcGog', 'pcOtherLauncher'];
   var FALLBACK_GROUPS = [
     { id: 'pc', label: 'owned.group.pc', keys: FALLBACK_PC_LAUNCHER_KEYS.concat(['pcEmulator', 'steamDeck', 'mobile']) },
     { id: 'playstation', label: 'owned.group.playstation', keys: ['ps5', 'ps4', 'ps4Emulator', 'ps3', 'ps3Emulator', 'ps2', 'ps1', 'psp', 'psVita'] },
@@ -66,6 +70,15 @@
   /* 'pc' ya no es una opcion separada: alias historico de pcSteam en buildAliases(). */
   var PLATFORM_KEYS = (STORAGE && Array.isArray(STORAGE.PLATFORM_KEYS)) ? STORAGE.PLATFORM_KEYS.slice() :
     OWNED_PLATFORM_KEYS.concat(['emulator', 'retro']);
+  /* Plataformas donde un juego puede PUBLICARSE. Excluye emuladores y las
+     variantes de launcher: un QID de Windows solo acredita un lanzamiento en PC,
+     no todos los clientes ni todas las maquinas emuladoras del usuario. */
+  var EMULATOR_PLATFORM_KEYS = ['pcEmulator', 'ps4Emulator', 'ps3Emulator', 'switchEmulator',
+    'emulator', 'retro', 'retroEmulator'];
+  var RELEASE_PLATFORM_KEYS = PLATFORM_KEYS.filter(function (k) {
+    return k === 'pcSteam' ||
+      (PC_RUNTIME_KEYS.indexOf(k) === -1 && EMULATOR_PLATFORM_KEYS.indexOf(k) === -1);
+  });
   var VIEW_KEY = (STORAGE && STORAGE.VIEW_KEY) ? STORAGE.VIEW_KEY : 'gamevault-active-view-v1';
   /* Catálogo único de géneros definido en storage.js (v1.1.1), con fallback por si
      storage.js no se cargara; la fuente de verdad es GVStorage.GENRE_KEYS. */
@@ -96,6 +109,9 @@
   var platformOptions = null;
   var platformHelpKey = '';
   var platformShowAll = false;
+  /* null = el usuario todavia no ha usado "Autocompletar ficha": no hay datos
+     de disponibilidad y el selector se comporta como en versiones anteriores. */
+  var gamePlatformKeys = null;
   var recommendToken = 0;
   var recommendSeen = {};
   var recommendCurrent = null;
@@ -397,6 +413,9 @@
     switchEmulator: ['switch', 'switch2'],
     switch2: ['switch']
   };
+  /* Consolas base que un emulador marcado puede ejecutar sin estar marcadas
+     fisicamente. El resto de extras (emulator/retro) exige estar en Mis Consolas. */
+  var EMULATOR_BASE_EXTRAS = ['ps4', 'ps3', 'switch', 'switch2'];
   function addPlatformOption(list, key) {
     if (!key || PLATFORM_KEYS.indexOf(key) === -1 || list.indexOf(key) !== -1) return;
     list.push(key);
@@ -424,9 +443,13 @@
     }
     (candidates || []).forEach(function (key) {
       var capable = PLATFORM_TO_OWNED[key] || [key];
-      /* Un launcher detectado solo habilita ese cliente (y Steam Deck, que
-         ejecuta el mismo catalogo), nunca todos los clientes marcados. */
-      if (PC_LAUNCHER_KEYS.indexOf(key) !== -1) capable = [key, 'steamDeck'];
+      /* Un lanzamiento generico en PC solo habilita los clientes abiertos (y
+         Steam Deck), nunca EA/Battle.net/Ubisoft/Xbox/Riot marcados por el
+         usuario: esos no acreditan que el juego saliera en esa tienda. */
+      if (key === 'pcSteam') capable = PC_OPEN_LAUNCHER_KEYS.concat(['pcEmulator', 'steamDeck']);
+      /* Un launcher detectado explicitamente solo habilita ese cliente (y Steam
+         Deck, que ejecuta el mismo catalogo), nunca todos los marcados. */
+      else if (PC_LAUNCHER_KEYS.indexOf(key) !== -1) capable = [key, 'steamDeck'];
       var hits = capable.filter(function (k) { return owned.indexOf(k) !== -1; });
       if (!hits.length) return;
       /* Solo el hardware realmente marcado (y sus equivalentes). Añadir la
@@ -434,7 +457,11 @@
          launchers de PC cuando el usuario no los tiene marcados. */
       hits.forEach(function (k) {
         add(k);
-        (OWNED_TO_PLATFORM_EXTRA[k] || []).forEach(add);
+        /* Solo equivalentes marcados por el usuario o la consola base de un
+           emulador que si posee: nunca "Emulator"/"Retro" genericos. */
+        (OWNED_TO_PLATFORM_EXTRA[k] || []).forEach(function (extra) {
+          if (owned.indexOf(extra) !== -1 || EMULATOR_BASE_EXTRAS.indexOf(extra) !== -1) add(extra);
+        });
       });
       /* Un emulador retro también habilita la consola física del juego. */
       if (hits.indexOf('retroEmulator') !== -1 && RETRO_OWNED_KEYS.indexOf(key) !== -1) add(key);
@@ -1074,9 +1101,11 @@
     'autre lanceur': 1, 'altro launcher': 1, 'anderer launcher': 1,
     'другой лаунчер': 1, 'その他のランチャー': 1
   };
-  var platformTextCache = null;
-  function platformTextEntries() {
-    if (platformTextCache) return platformTextCache;
+  var platformTextCache = {};
+  function platformTextEntries(allowed) {
+    var list = allowed || PLATFORM_KEYS;
+    var cacheKey = list.join('|');
+    if (platformTextCache[cacheKey]) return platformTextCache[cacheKey];
     if (!aliasCache) aliasCache = buildAliases();
     var map = {};
     Object.keys(aliasCache).forEach(function (alias) {
@@ -1085,7 +1114,7 @@
       (aliasCache[alias] || []).forEach(function (v) {
         if (key) return;
         var k = v.slice(2);
-        if ((v.indexOf('p:') === 0 || v.indexOf('o:') === 0) && PLATFORM_KEYS.indexOf(k) !== -1) key = k;
+        if ((v.indexOf('p:') === 0 || v.indexOf('o:') === 0) && list.indexOf(k) !== -1) key = k;
       });
       if (!key) return;
       var phrase = normTitle(alias);
@@ -1093,14 +1122,14 @@
       if (!map[phrase]) map[phrase] = [];
       if (map[phrase].indexOf(key) === -1) map[phrase].push(key);
     });
-    platformTextCache = Object.keys(map).sort(function (a, b) { return b.length - a.length; })
+    platformTextCache[cacheKey] = Object.keys(map).sort(function (a, b) { return b.length - a.length; })
       .map(function (phrase) { return { phrase: ' ' + phrase + ' ', keys: map[phrase] }; });
-    return platformTextCache;
+    return platformTextCache[cacheKey];
   }
-  function platformKeysFromText(sources) {
+  function platformKeysFromText(sources, allowed) {
     var text = ' ' + normTitle((sources || []).join(' ')) + ' ';
     var found = [];
-    platformTextEntries().forEach(function (entry) {
+    platformTextEntries(allowed).forEach(function (entry) {
       var pos = text.indexOf(entry.phrase);
       if (pos === -1) return;
       entry.keys.forEach(function (k) {
@@ -1114,10 +1143,10 @@
     found.sort(function (a, b) { return a.pos - b.pos; });
     return found.map(function (f) { return f.key; });
   }
-  function platformKeysFromQids(qids) {
-    var out = [];
+  function platformKeysFromQids(qids, allowedKeys) {
+    var out = [], list = allowedKeys || PLATFORM_KEYS;
     (qids || []).forEach(function (qid) {
-      PLATFORM_KEYS.forEach(function (k) {
+      list.forEach(function (k) {
         var allowed = WIKIDATA_PLATFORM_QIDS[k] || [];
         if (allowed.indexOf(qid) !== -1 && out.indexOf(k) === -1) out.push(k);
       });
@@ -1204,7 +1233,7 @@
      solo se ofrecen las opciones abiertas (Steam, GOG y Otro launcher). Los
      clientes propietarios (EA, Battle.net, Ubisoft, Xbox y Riot) exigen una
      confirmacion explicita. */
-  var PC_LAUNCHER_FALLBACK_KEYS = ['pcSteam', 'pcGog', 'pcOtherLauncher'];
+  var PC_LAUNCHER_FALLBACK_KEYS = PC_OPEN_LAUNCHER_KEYS.slice();
   var PC_STORE_MARKERS = [
     { key: 'pcSteam', re: /\bsteam\b|\bsteamworks\b|\bvalve corporation\b/i },
     { key: 'pcEpic', re: /\bepic games(?: store| launcher)?\b|\bepic store\b/i },
@@ -1234,40 +1263,56 @@
     var text = ' ' + String(((result && result.pcPlatformTextSources) || []).join(' · ')) + ' ';
     return /\b(?:windows|microsoft windows|pc)\b/i.test(text);
   }
-  function detectGamePlatforms(result, owned) {
+  /* Plataformas REALES donde salió el juego, segun P400 y el campo "platform"
+     del Infobox (mas su equivalente local/remaster). No intervienen aqui las
+     consolas del usuario: esta lista es la fuente de ambos niveles del selector.
+     Las tiendas cerradas solo se admiten si el TEXTO DE PLATAFORMA las nombra;
+     un publisher/distributor (P123/P750) no acredita un lanzamiento en EA App,
+     Riot Client ni ningun otro launcher propietario. */
+  function detectRealGamePlatforms(result) {
     var qids = result.allPlatformQids || result.platformQids || [];
-    var candidates = platformKeysFromQids(qids).concat(platformKeysFromText(result.platformTextSources));
-    var unique = [];
-    candidates.forEach(function (k) { if (unique.indexOf(k) === -1) unique.push(k); });
-    var hasPc = hasPcPlatformSignal(result);
-    var foundStores = hasPc ? pcLaunchersFromEvidence(result.storeEvidenceSources) : [];
-    var allowed = foundStores.length ? foundStores : PC_LAUNCHER_FALLBACK_KEYS;
-    var usable = unique.filter(function (k) {
-      if (PC_LAUNCHER_KEYS.indexOf(k) === -1) return true;
-      return hasPc && allowed.indexOf(k) !== -1;
+    var keys = platformKeysFromQids(qids, RELEASE_PLATFORM_KEYS);
+    /* Solo fuentes de plataforma: nunca el extracto completo ni P123/P750. */
+    var releaseText = result.releasePlatformSources || [];
+    platformKeysFromText(releaseText, RELEASE_PLATFORM_KEYS).forEach(function (k) {
+      if (keys.indexOf(k) === -1) keys.push(k);
     });
+    if (!hasPcPlatformSignal(result)) {
+      keys = keys.filter(function (k) { return PC_RUNTIME_KEYS.indexOf(k) === -1; });
+      return keys;
+    }
+    /* Sustituye el representante de PC en su posicion original para conservar
+       el orden P400/Infobox (original, ports y remasterizaciones). */
+    var stores = pcLaunchersFromEvidence(releaseText);
+    var pcKeys = (stores.length ? stores : PC_LAUNCHER_FALLBACK_KEYS.slice(0, 1))
+      .filter(function (k) { return RELEASE_PLATFORM_KEYS.indexOf(k) !== -1; });
+    var ordered = [], pcPlaced = false;
+    function add(k) { if (ordered.indexOf(k) === -1) ordered.push(k); }
+    keys.forEach(function (k) {
+      if (k === 'pcSteam') {
+        if (!pcPlaced) { pcKeys.forEach(add); pcPlaced = true; }
+      } else add(k);
+    });
+    if (!pcPlaced) pcKeys.forEach(add);
+    return ordered;
+  }
+  /* Nivel 1: Mis Consolas INTERSECCION plataformas reales del juego. */
+  function detectGamePlatforms(result, owned, realKeys) {
+    var real = realKeys || detectRealGamePlatforms(result);
     if (owned.length) {
-      var matched = platformKeysMatchingOwned(usable, owned);
+      var matched = platformKeysMatchingOwned(real, owned);
       /* PC / Emulador solo si el usuario lo marco y el juego tiene version
          emulable (consola retro soportada o PC). */
       if (owned.indexOf('pcEmulator') !== -1 &&
-          (hasPc || usable.some(function (k) { return EMULABLE_PLATFORM_KEYS.indexOf(k) !== -1; }))) {
+          (real.indexOf('pcSteam') !== -1 ||
+           real.some(function (k) { return EMULABLE_PLATFORM_KEYS.indexOf(k) !== -1; }))) {
         addPlatformOption(matched, 'pcEmulator');
       }
       return matched;
     }
-    /* Sin consolas configuradas: un mismo QID mapea a varias variantes del
-       hardware (PS4 y PS4 / Emulador, o todos los launchers de PC). Mostramos
-       una sola opción por familia para no inundar el datalist. */
-    var out = [];
-    var pcRepresentative = foundStores.length ? foundStores[0] : 'pcSteam';
-    usable.forEach(function (k) {
-      if (/Emulator$/.test(k)) return;
-      if (PC_LAUNCHER_KEYS.indexOf(k) !== -1) k = pcRepresentative;
-      if (PC_RUNTIME_KEYS.indexOf(k) !== -1 && k !== 'pcEmulator') k = pcRepresentative;
-      if (out.indexOf(k) === -1) out.push(k);
-    });
-    return out;
+    /* Sin consolas configuradas se asuman todas: el nivel 1 ya son todas las
+       plataformas reales, sin variantes de emulador ni launchers de mas. */
+    return real.slice();
   }
 
   /* Rama Wikidata: resuelve el QID (prioriza el pageprops de Wikipedia EN), lee
@@ -1350,7 +1395,7 @@
      El formulario no se toca hasta que todas han terminado (o han fallado). */
   function collectMetadata(title, lang, withRemasters) {
     var result = { genreSources: [], platformTextSources: [], pcPlatformTextSources: [],
-      storeEvidenceSources: [], platformQids: [], allPlatformQids: [] };
+      releasePlatformSources: [], storeEvidenceSources: [], platformQids: [], allPlatformQids: [] };
     var enBranch = fetchMetaJson(wikiMetadataUrl(title)).catch(function () { return null; });
     var qidFromEn = enBranch.then(function (data) {
       var page = pickBestPage(data, title, false);
@@ -1382,6 +1427,7 @@
         if (infoboxPlatforms) {
           result.platformTextSources.push(infoboxPlatforms);
           result.pcPlatformTextSources.push(infoboxPlatforms);
+          result.releasePlatformSources.push(infoboxPlatforms);
         }
         result.genreSources.push(enPage.extract || '', categoriesText(enPage.categories));
         var infoboxGenre = extractInfoboxParam(pageContent, ['genre']);
@@ -1400,6 +1446,7 @@
         if (localInfo.platform) {
           result.platformTextSources.push(localInfo.platform);
           result.pcPlatformTextSources.push(localInfo.platform);
+          result.releasePlatformSources.push(localInfo.platform);
         }
         if (localInfo.store) result.storeEvidenceSources.push(localInfo.store);
       }
@@ -1417,6 +1464,7 @@
         if (wd.platformLabels && wd.platformLabels.length) {
           result.platformTextSources.push(wd.platformLabels.join(' · '));
           result.pcPlatformTextSources.push(wd.platformLabels.join(' · '));
+          result.releasePlatformSources.push(wd.platformLabels.join(' · '));
         }
         if (wd.distributorLabels && wd.distributorLabels.length) result.storeEvidenceSources.push(wd.distributorLabels.join(' · '));
         if (wd.publisherLabels && wd.publisherLabels.length) result.storeEvidenceSources.push(wd.publisherLabels.join(' · '));
@@ -1476,16 +1524,18 @@
        El scraper SOLO filtra las opciones: nunca preselecciona ni rellena el
        campo, que queda vacío (con su placeholder) para que el usuario elija. */
     if (result.allPlatformQids || (result.platformTextSources && result.platformTextSources.length)) {
-      var owned = ownedConfigured() ? effectiveOwnedKeys() : [];
-      var matched = detectGamePlatforms(result, owned);
-      if (matched.length) {
-        /* Al editar, la plataforma ya guardada sigue disponible en la lista
-           aunque el scraper no la detecte; su valor no se sobrescribe nunca. */
-        var detected = matched.map(function (k) { return displayValue('p', k); }).join(', ');
+      var real = detectRealGamePlatforms(result);
+      gamePlatformKeys = real.length ? real : null;
+      if (gamePlatformKeys) {
+        var owned = ownedConfigured() ? effectiveOwnedKeys() : [];
+        var matched = detectGamePlatforms(result, owned, real);
+        /* La plataforma ya guardada se anade despues para no perder el valor
+           del formulario; los dos niveles quedan disponibles tras el scraper. */
         var currentKey = keyOf('p', $('e-plat').value.trim());
         if (PLATFORM_KEYS.indexOf(currentKey) !== -1 && matched.indexOf(currentKey) === -1) matched.push(currentKey);
+        /* Nivel 1 por defecto: Mis Consolas ∩ plataformas reales del juego. */
         setPlatformOptions(matched, 'editor.platformFiltered', true);
-        done.push(t('meta.platforms') + ': ' + detected);
+        done.push(t('meta.platforms') + ': ' + matched.map(function (k) { return displayValue('p', k); }).join(', '));
       } else {
         setPlatformOptions(null, 'editor.platformNoMatch', false);
       }
@@ -1652,7 +1702,8 @@
       return '<option value="' + esc(t('genre.' + k)) + '"></option>';
     }).join('');
   }
-  /* Pinta el datalist, la ayuda y el enlace "Ver todas las plataformas". */
+  /* Pinta el datalist, la ayuda y el enlace secundario. Antes del scraper el
+     enlace destaca el catalogo general; despues, solo las plataformas reales. */
   function setPlatformOptions(keys, helpKey, showAll) {
     platformOptions = (keys && keys.length) ? keys.slice() : null;
     platformHelpKey = helpKey || '';
@@ -1665,7 +1716,7 @@
     }
     var link = $('e-plat-show-all');
     if (link) {
-      link.textContent = t('editor.showAllPlatforms');
+      link.textContent = t('editor.showAllGamePlatforms');
       link.hidden = !platformShowAll;
     }
   }
@@ -1821,6 +1872,17 @@
     del.classList.remove('armed');
     del.textContent = t('editor.delete');
   }
+  /* Estado inicial (sin scraper): primero Mis Consolas; el enlace muestra el
+     catalogo general. Tambien se usa al cambiar el titulo para descartar datos
+     de disponibilidad que ya no pertenecen a la ficha que se esta editando. */
+  function resetEditorPlatformOptions() {
+    gamePlatformKeys = null;
+    var platKeys = platformOptionsForOwned();
+    var currentKey = keyOf('p', $('e-plat').value.trim());
+    if (PLATFORM_KEYS.indexOf(currentKey) !== -1 && platKeys.indexOf(currentKey) === -1) platKeys.push(currentKey);
+    var hasOwned = ownedConfigured() && effectiveOwnedKeys().length > 0;
+    setPlatformOptions(platKeys, hasOwned ? 'editor.platformFiltered' : '', hasOwned);
+  }
   function openEditor(id) {
     editingId = id || null;
     var g = id ? state.games.filter(function (x) { return x.id === id; })[0] : null;
@@ -1849,16 +1911,7 @@
     var del = $('e-del');
     del.hidden = !g;
     resetDeleteButton();
-    /* Antes del scraper: el datalist solo ofrece el hardware del usuario. */
-    var platKeys = platformOptionsForOwned();
-    if (g && g.platform) {
-      var currentKey = keyOf('p', g.platform);
-      if (PLATFORM_KEYS.indexOf(currentKey) !== -1 && platKeys.indexOf(currentKey) === -1) platKeys.push(currentKey);
-    } else if (state.f.plat && platKeys.indexOf(state.f.plat) === -1) {
-      platKeys.push(state.f.plat);
-    }
-    var hasOwned = ownedConfigured() && effectiveOwnedKeys().length > 0;
-    setPlatformOptions(platKeys, hasOwned ? 'editor.platformFiltered' : '', hasOwned);
+    resetEditorPlatformOptions();
     setOverlay('ov-edit', true);
     setTimeout(function () { $('e-title').focus(); }, 0);
   }
@@ -2505,7 +2558,14 @@
   on('e-cover-fetch', 'click', searchCover);
   on('e-autofill', 'click', autofillMetadata);
   on('e-plat-show-all', 'click', function () {
-    setPlatformOptions(PLATFORM_KEYS.slice(), 'editor.platformAllShown', false);
+    if (gamePlatformKeys && gamePlatformKeys.length) {
+      /* Nivel 2: todas las plataformas publicadas por el juego, sin catalogo
+         generico ni consolas donde nunca existio. */
+      setPlatformOptions(gamePlatformKeys.slice(), 'editor.platformGameAllShown', false);
+    } else {
+      /* Juego manual: aun no hay datos de disponibilidad, catalogo general. */
+      setPlatformOptions(PLATFORM_KEYS.slice(), 'editor.platformAllShown', false);
+    }
     $('e-plat').focus();
   });
   on('e-cover-clear', 'click', function () {
@@ -2532,7 +2592,11 @@
       renderCoverPreview();
     });
   });
-  on('e-title', 'input', function () { coverMsg = ''; resetAutofillMsg(); renderCoverPreview(); });
+  on('e-title', 'input', function () {
+    coverMsg = ''; resetAutofillMsg(); renderCoverPreview();
+    /* Un titulo distinto invalida la disponibilidad del scraper anterior. */
+    resetEditorPlatformOptions();
+  });
 
   on('r-plat', 'change', function () { pickId = null; roll(); });
   on('r-again', 'click', roll);
@@ -2661,7 +2725,7 @@
     navigator.serviceWorker.addEventListener('controllerchange', reloadClean);
     purgeOldCaches().then(function (purged) {
       /* La query fuerza al navegador a descargar el SW nuevo sin usar su HTTP cache. */
-      return navigator.serviceWorker.register('./sw.js?v=1.1.7', { scope: './' })
+      return navigator.serviceWorker.register('./sw.js?v=1.1.8', { scope: './' })
         .then(function (registration) {
           if (purged) setTimeout(reloadClean, 200);
           return registration.update();

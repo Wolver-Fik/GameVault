@@ -306,10 +306,12 @@
     ,'owned.pcRiot': 'PC / Riot Client'
     ,'owned.pcOtherLauncher': 'PC / Другой лаунчер'
     /* v1.1.2: умный выбор платформы в редакторе. */
-    ,'editor.showAllPlatforms': 'Показать все платформы'
+    ,'editor.showAllPlatforms': 'Показать все платформы этой игры'
+    ,'editor.showAllGamePlatforms': 'Показать все платформы этой игры'
     ,'editor.platformFiltered': 'Фильтр по вашим консолям и доступности игры'
     ,'editor.platformNoMatch': 'Ни одна из ваших консолей не подходит — показаны все платформы'
     ,'editor.platformAllShown': 'Показаны все платформы'
+    ,'editor.platformGameAllShown': 'Показаны все платформы этой игры'
     ,'meta.platforms': 'Платформы'
   };
 })();

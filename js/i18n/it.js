@@ -306,10 +306,12 @@
     ,'owned.pcRiot': 'PC / Riot Client'
     ,'owned.pcOtherLauncher': 'PC / Altro launcher'
     /* v1.1.2: selettore intelligente delle piattaforme nell'editor. */
-    ,'editor.showAllPlatforms': 'Mostra tutte le piattaforme'
+    ,'editor.showAllPlatforms': 'Mostra tutte le piattaforme di questo gioco'
+    ,'editor.showAllGamePlatforms': 'Mostra tutte le piattaforme di questo gioco'
     ,'editor.platformFiltered': 'Filtrato in base alle tue console e alla disponibilità del gioco'
     ,'editor.platformNoMatch': 'Nessuna delle tue console corrisponde al gioco: mostro tutte le piattaforme'
     ,'editor.platformAllShown': 'Mostro tutte le piattaforme'
+    ,'editor.platformGameAllShown': 'Mostro tutte le piattaforme di questo gioco'
     ,'meta.platforms': 'Piattaforme'
   };
 })();

@@ -10,7 +10,7 @@
     /* elimina de entrada cualquier cache antigua de GameVault para que no se
        sirva una versión previa del selector de plataformas. */
     (function () {
-      var CURRENT = 'gamevault-v1.1.6';
+      var CURRENT = 'gamevault-v1.1.8';
       if (!('caches' in window)) return;
       try {
         caches.keys().then(function (keys) {
@@ -178,7 +178,7 @@
       <div class="lbl"><span data-i18n="editor.platform">Plataforma</span>
         <input class="input" id="e-plat" type="text" list="dl-plat" autocomplete="off" maxlength="40" data-i18n-placeholder="editor.platformPlaceholder" placeholder="Selecciona una plataforma...">
         <span class="help" id="e-plat-help" hidden></span>
-        <button class="link-btn" id="e-plat-show-all" type="button" data-i18n="editor.showAllPlatforms" hidden>Ver todas las plataformas</button>
+        <button class="link-btn" id="e-plat-show-all" type="button" data-i18n="editor.showAllGamePlatforms" hidden>Ver todas las plataformas del juego</button>
       </div>
       <div class="lbl full"><span data-i18n="editor.genres">Géneros</span>
         <div class="genre-chips" id="e-genres" role="group" data-i18n-aria="editor.genresAria" aria-label="Géneros"></div>
