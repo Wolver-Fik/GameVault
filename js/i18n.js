@@ -1,4 +1,7 @@
 /* GameVault i18n controller: detection, persistence, translation and DOM binding. */
+/* v1.0.8: las claves de las vistas (view.*, console.*), los clientes de PC y el
+   catalogo con variantes "/ Emulador" (platform.*, owned.*, owned.group.*) se
+   resuelven con t(), que ya aplica fallback a en.js; los 8 diccionarios las incluyen todas. */
 (function () {
   /* Normaliza el namespace aunque un diccionario lo haya creado a medias. */
   var G = window.GVI18N;
@@ -108,6 +111,7 @@
   }
 
   G.KEY = KEY;
+  G.VERSION = '1.0.9';
   G.FALLBACK = FALLBACK;
   G.EVENT = EVENT;
   G.ORDER = ORDER;

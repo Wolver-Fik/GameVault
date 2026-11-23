@@ -2,6 +2,8 @@
 (function () {
   var STORAGE = window.GVStorage;
   var I = window.GVI18N;
+  var CACHE_NAME = 'gamevault-v1.0.9';
+  var RELOAD_FLAG = 'gv-cache-reload-v1.0.9';
 
   function t(key, vars) {
     if (!I || typeof I.t !== 'function') return String(key);
@@ -30,11 +32,35 @@
   STATUS.forEach(function (s) { SMAP[s.id] = s; });
   function statusLabel(s) { return t('status.' + s.id); }
 
-  var PLATFORM_KEYS = ['pc', 'steamDeck', 'ps5', 'ps4', 'ps2', 'xbox', 'switch', 'gba', 'emulator', 'retro'];
+  /* Catálogo único (v1.0.8) definido en storage.js: cinco bloques con sus
+     variantes "/ Emulador" y los clientes de PC. El fallback permite seguir
+     funcionando si storage.js no se cargara, pero la fuente de verdad es GVStorage. */
+  var FALLBACK_PC_LAUNCHER_KEYS = ['pcSteam', 'pcEpic', 'pcEa', 'pcBattleNet', 'pcUbisoft',
+    'pcGog', 'pcXboxApp', 'pcRiot', 'pcOtherLauncher'];
+  var PC_LAUNCHER_KEYS = (STORAGE && Array.isArray(STORAGE.PC_LAUNCHER_KEYS))
+    ? STORAGE.PC_LAUNCHER_KEYS.slice() : FALLBACK_PC_LAUNCHER_KEYS.slice();
+  var PC_RUNTIME_KEYS = PC_LAUNCHER_KEYS.concat(['pcEmulator']);
+  var FALLBACK_GROUPS = [
+    { id: 'pc', label: 'owned.group.pc', keys: FALLBACK_PC_LAUNCHER_KEYS.concat(['pcEmulator', 'steamDeck', 'mobile']) },
+    { id: 'playstation', label: 'owned.group.playstation', keys: ['ps5', 'ps4', 'ps4Emulator', 'ps3', 'ps3Emulator', 'ps2', 'ps1', 'psp', 'psVita'] },
+    { id: 'nintendoHome', label: 'owned.group.nintendoHome', keys: ['switch2', 'switch', 'switchEmulator', 'wiiU', 'wii', 'gamecube', 'n64', 'snes', 'nes'] },
+    { id: 'nintendoPortable', label: 'owned.group.nintendoPortable', keys: ['n3ds', 'nds', 'gba', 'gameboy'] },
+    { id: 'xboxRetro', label: 'owned.group.xboxRetro', keys: ['xboxSeries', 'xboxOne', 'xbox360', 'genesis', 'dreamcast', 'retroEmulator'] }
+  ];
+  var CONSOLE_GROUPS = (STORAGE && Array.isArray(STORAGE.CONSOLE_GROUPS)) ? STORAGE.CONSOLE_GROUPS : FALLBACK_GROUPS;
+  var OWNED_PLATFORM_KEYS = (STORAGE && Array.isArray(STORAGE.CONSOLE_KEYS)) ? STORAGE.CONSOLE_KEYS.slice() :
+    [].concat(FALLBACK_GROUPS[0].keys, FALLBACK_GROUPS[1].keys, FALLBACK_GROUPS[2].keys,
+      FALLBACK_GROUPS[3].keys, FALLBACK_GROUPS[4].keys);
+  /* 'pc' ya no es una opcion separada: alias historico de pcSteam en buildAliases(). */
+  var PLATFORM_KEYS = (STORAGE && Array.isArray(STORAGE.PLATFORM_KEYS)) ? STORAGE.PLATFORM_KEYS.slice() :
+    OWNED_PLATFORM_KEYS.concat(['emulator', 'retro']);
+  var VIEW_KEY = (STORAGE && STORAGE.VIEW_KEY) ? STORAGE.VIEW_KEY : 'gamevault-active-view-v1';
   var GENRE_KEYS = ['action', 'adventure', 'rpg', 'platformer', 'shooter', 'strategy', 'sports', 'racing', 'horror', 'puzzle', 'indie', 'fighting', 'simulation'];
 
-  var state = { games: [], f: { status: 'todos', plat: '', genre: '', sort: 'reciente', q: '' } };
+  var state = { games: [], f: { status: 'todos', plat: '', genre: '', sort: 'reciente', q: '', ownedOnly: false } };
+  var currentView = 'collection';
   var storageOk = true;
+  var ownedPlatforms = null; /* null = no configurado, se asumen todas */
   var editingId = null;
   var editScore = null;
   var editCover = '';
@@ -45,6 +71,14 @@
   var delArmed = false;
   var pickId = null;
   var rollToken = 0;
+  var editGenres = [];
+  var recommendToken = 0;
+  var recommendSeen = {};
+  var recommendCurrent = null;
+  var recommendGenres = [];
+  var recommendPlatforms = [];
+  var flashNote = '';
+  var flashTimer = null;
 
   var $ = function (id) { return document.getElementById(id); };
   /* El overlay y su modal se ocultan/show juntos; el atributo hidden va en el HTML. */
@@ -83,29 +117,260 @@
     var map = {};
     function add(value, prefixed) {
       var s = String(value || '').trim().toLowerCase();
-      if (s) map[s] = prefixed;
+      if (!s) return;
+      if (!map[s]) map[s] = [];
+      if (map[s].indexOf(prefixed) === -1) map[s].push(prefixed);
     }
     I.ORDER.forEach(function (code) {
       PLATFORM_KEYS.forEach(function (k) { add(I.tIn(code, 'platform.' + k), 'p:' + k); });
       GENRE_KEYS.forEach(function (k) { add(I.tIn(code, 'genre.' + k), 'g:' + k); });
+      OWNED_PLATFORM_KEYS.forEach(function (k) { add(I.tIn(code, 'owned.' + k), 'o:' + k); });
     });
     PLATFORM_KEYS.forEach(function (k) { add(k, 'p:' + k); });
     GENRE_KEYS.forEach(function (k) { add(k, 'g:' + k); });
+    OWNED_PLATFORM_KEYS.forEach(function (k) { add(k, 'o:' + k); });
+    /* aliases comunes para matchear hardware del usuario con juegos */
+    /* PC / Steam absorbe el "PC" historico; las variantes / Emulador son claves propias. */
+    add('pc', 'p:pcSteam'); add('pc', 'o:pcSteam');
+    add('pc / steam', 'p:pcSteam'); add('pc/steam', 'p:pcSteam');
+    add('pc / emulator', 'p:pcEmulator'); add('pc emulator', 'p:pcEmulator');
+    add('pc / emulador', 'p:pcEmulator'); add('pc emulador', 'p:pcEmulator');
+    add('steam', 'p:pcSteam'); add('steam', 'o:pcSteam');
+    add('pc/steam', 'p:pcSteam'); add('pc/steam', 'o:pcSteam');
+    add('windows', 'p:pcSteam'); add('windows', 'o:pcSteam');
+    /* Clientes de PC: alias cortos ademas de las etiquetas traducidas de cada idiom. */
+    add('epic', 'p:pcEpic'); add('epic', 'o:pcEpic');
+    add('epic games', 'p:pcEpic'); add('epic games', 'o:pcEpic');
+    add('epic launcher', 'p:pcEpic'); add('epic games launcher', 'p:pcEpic');
+    add('ea', 'p:pcEa'); add('ea', 'o:pcEa');
+    add('ea app', 'p:pcEa'); add('ea app', 'o:pcEa');
+    add('origin', 'p:pcEa'); add('origin', 'o:pcEa');
+    add('battle.net', 'p:pcBattleNet'); add('battle.net', 'o:pcBattleNet');
+    add('battlenet', 'p:pcBattleNet'); add('battle net', 'p:pcBattleNet');
+    add('blizzard', 'p:pcBattleNet'); add('blizzard', 'o:pcBattleNet');
+    add('ubisoft', 'p:pcUbisoft'); add('ubisoft', 'o:pcUbisoft');
+    add('ubisoft connect', 'p:pcUbisoft'); add('uplay', 'p:pcUbisoft');
+    add('gog', 'p:pcGog'); add('gog', 'o:pcGog');
+    add('gog galaxy', 'p:pcGog'); add('good old games', 'p:pcGog');
+    add('xbox app', 'p:pcXboxApp'); add('xbox app', 'o:pcXboxApp');
+    add('xbox game pass', 'p:pcXboxApp'); add('pc game pass', 'p:pcXboxApp');
+    add('game pass', 'p:pcXboxApp'); add('game pass', 'o:pcXboxApp');
+    add('riot', 'p:pcRiot'); add('riot', 'o:pcRiot');
+    add('riot client', 'p:pcRiot'); add('riot games', 'p:pcRiot');
+    add('other launcher', 'o:pcOtherLauncher'); add('otro launcher', 'o:pcOtherLauncher');
+    add('outro launcher', 'o:pcOtherLauncher'); add('autre lanceur', 'o:pcOtherLauncher');
+    add('altro launcher', 'o:pcOtherLauncher'); add('anderer launcher', 'o:pcOtherLauncher');
+    add('другой лаунчер', 'o:pcOtherLauncher'); add('その他のランチャー', 'o:pcOtherLauncher');
+    add('steam deck', 'p:steamDeck'); add('steam deck', 'o:steamDeck'); add('deck', 'o:steamDeck');
+    add('ps4 / emulator', 'p:ps4Emulator'); add('ps4 emulator', 'p:ps4Emulator');
+    add('ps4 / emulador', 'p:ps4Emulator'); add('ps4 emulador', 'p:ps4Emulator');
+    add('ps3 / emulator', 'p:ps3Emulator'); add('ps3 emulator', 'p:ps3Emulator');
+    add('ps3 / emulador', 'p:ps3Emulator'); add('ps3 emulador', 'p:ps3Emulator');
+    add('switch / emulator', 'p:switchEmulator'); add('switch emulator', 'p:switchEmulator');
+    add('switch / emulador', 'p:switchEmulator'); add('switch emulador', 'p:switchEmulator');
+    add('playstation 5', 'o:ps5'); add('playstation 4', 'o:ps4'); add('playstation 3', 'o:ps3');
+    add('playstation 2', 'o:ps2'); add('playstation 1', 'o:ps1'); add('playstation', 'o:ps1');
+    add('ps one', 'o:ps1'); add('psx', 'o:ps1');
+    add('playstation portable', 'o:psp'); add('ps portable', 'o:psp');
+    add('playstation vita', 'o:psVita'); add('ps vita', 'o:psVita'); add('vita', 'o:psVita');
+    add('xbox series x|s', 'o:xboxSeries'); add('xbox series', 'o:xboxSeries'); add('xbox', 'o:xboxSeries');
+    add('xbox one', 'o:xboxOne'); add('xbox 360', 'o:xbox360');
+    add('nintendo switch 2', 'o:switch2'); add('switch 2', 'o:switch2');
+    add('nintendo switch', 'o:switch');
+    add('wii u', 'o:wiiU'); add('wii', 'o:wii');
+    add('gamecube', 'o:gamecube'); add('nintendo gamecube', 'o:gamecube');
+    add('nintendo 64', 'o:n64'); add('n64', 'o:n64');
+    add('super nintendo', 'o:snes'); add('super nintendo entertainment system', 'o:snes');
+    add('nintendo entertainment system', 'o:nes'); add('famicom', 'o:nes');
+    add('nintendo 3ds', 'o:n3ds'); add('3ds', 'o:n3ds');
+    add('nintendo ds', 'o:nds'); add('ds', 'o:nds');
+    add('game boy advance', 'o:gba'); add('gameboy advance', 'o:gba');
+    add('game boy color', 'o:gameboy'); add('gameboy color', 'o:gameboy'); add('game boy', 'o:gameboy');
+    add('gameboy', 'o:gameboy'); add('gb', 'o:gameboy'); add('gbc', 'o:gameboy');
+    add('sega genesis', 'o:genesis'); add('mega drive', 'o:genesis'); add('sega mega drive', 'o:genesis'); add('genesis', 'o:genesis');
+    add('dreamcast', 'o:dreamcast'); add('sega dreamcast', 'o:dreamcast');
+    add('emulador', 'o:retroEmulator'); add('emulator', 'o:retroEmulator');
+    add('retro / emulator', 'o:retroEmulator'); add('retro / emulador', 'o:retroEmulator');
+    add('movil', 'o:mobile'); add('móvil', 'o:mobile'); add('mobile', 'o:mobile'); add('android', 'o:mobile'); add('ios', 'o:mobile');
     return map;
   }
   function keyOf(kind, value) {
     var raw = String(value || '').trim();
     if (!raw) return '';
     if (!aliasCache) aliasCache = buildAliases();
-    var found = aliasCache[raw.toLowerCase()];
-    if (found && found.indexOf(kind + ':') === 0) return found.slice(2);
+    var list = kind === 'p' ? PLATFORM_KEYS : kind === 'g' ? GENRE_KEYS : OWNED_PLATFORM_KEYS;
+    var candidates = aliasCache[raw.toLowerCase()] || [];
+    var i, k;
+    /* Un mismo texto puede ser valido como plataforma y como consola (p. ej. "PS5"). */
+    for (i = 0; i < candidates.length; i++) {
+      if (candidates[i].indexOf(kind + ':') === 0) return candidates[i].slice(2);
+    }
+    for (i = 0; i < candidates.length; i++) {
+      k = candidates[i].slice(2);
+      if (list.indexOf(k) !== -1) return k;
+    }
     return raw;
   }
   function displayValue(kind, value) {
     var key = keyOf(kind, value);
-    var list = kind === 'p' ? PLATFORM_KEYS : GENRE_KEYS;
-    var prefix = kind === 'p' ? 'platform.' : 'genre.';
+    var list = kind === 'p' ? PLATFORM_KEYS : kind === 'g' ? GENRE_KEYS : OWNED_PLATFORM_KEYS;
+    var prefix = kind === 'p' ? 'platform.' : kind === 'g' ? 'genre.' : 'owned.';
     return list.indexOf(key) !== -1 ? t(prefix + key) : String(value || '');
+  }
+
+  /* Un juego puede tener varios generos; los juegos antiguos solo tenian genre. */
+  function genresOf(g) {
+    if (!g) return [];
+    var raw = Array.isArray(g.genres) ? g.genres : (g.genre ? [g.genre] : []);
+    var out = [];
+    raw.forEach(function (v) {
+      var k = keyOf('g', v);
+      if (k && out.indexOf(k) === -1) out.push(k);
+    });
+    return out;
+  }
+  function primaryGenre(g) { return genresOf(g)[0] || ''; }
+  function genreTagsHtml(g, emptyText) {
+    var list = genresOf(g);
+    if (!list.length) return '<span class="g">' + esc(emptyText || t('card.noGenre')) + '</span>';
+    return '<span class="g" title="' + esc(list.map(function (k) { return displayValue('g', k); }).join(' · ')) + '">' +
+      list.map(function (k, i) {
+        return (i ? '<span class="gsep">·</span>' : '') + '<span class="gtag">' + esc(displayValue('g', k)) + '</span>';
+      }).join('') + '</span>';
+  }
+
+  /* ---------- Mis consolas / dispositivos disponibles ---------- */
+  var RETRO_OWNED_KEYS = ['retroEmulator', 'ps2', 'ps1', 'psp', 'n64', 'snes', 'nes',
+    'gba', 'gameboy', 'genesis', 'dreamcast'];
+  /* Que hardware sirve para cada plataforma de juego (retrocompatibilidad incluida).
+     Las variantes "/ Emulador" cuentan como maquina valida para su consola base. */
+  var PLATFORM_TO_OWNED = {
+    steamDeck: ['steamDeck', 'pcSteam', 'pcEmulator'],
+    mobile: ['mobile'],
+    ps5: ['ps5'],
+    ps4: ['ps4', 'ps4Emulator'],
+    ps4Emulator: ['ps4Emulator', 'ps4'],
+    ps3: ['ps3', 'ps3Emulator'],
+    ps3Emulator: ['ps3Emulator', 'ps3'],
+    ps2: ['ps2', 'retroEmulator'],
+    ps1: ['ps1', 'retroEmulator'],
+    psp: ['psp', 'retroEmulator'],
+    psVita: ['psVita'],
+    switch2: ['switch2', 'switchEmulator'],
+    switch: ['switch', 'switch2', 'switchEmulator'],
+    switchEmulator: ['switchEmulator', 'switch', 'switch2'],
+    wiiU: ['wiiU'],
+    wii: ['wii', 'wiiU'],
+    gamecube: ['gamecube', 'wii'],
+    n64: ['n64', 'retroEmulator'],
+    snes: ['snes', 'retroEmulator'],
+    nes: ['nes', 'retroEmulator'],
+    n3ds: ['n3ds'],
+    nds: ['nds', 'n3ds'],
+    gba: ['gba', 'retroEmulator'],
+    gameboy: ['gameboy', 'retroEmulator'],
+    xboxSeries: ['xboxSeries'],
+    xboxOne: ['xboxOne', 'xboxSeries'],
+    xbox360: ['xbox360'],
+    genesis: ['genesis', 'retroEmulator'],
+    dreamcast: ['dreamcast', 'retroEmulator'],
+    emulator: ['retroEmulator', 'pcEmulator', 'ps4Emulator', 'ps3Emulator', 'switchEmulator',
+      'ps2', 'ps1', 'psp', 'n64', 'snes', 'nes', 'gba', 'gameboy', 'genesis', 'dreamcast'],
+    retro: RETRO_OWNED_KEYS,
+    xbox: ['xboxSeries']
+  };
+  /* Cualquier launcher de PC (y el alias historico 'pc') sirve para jugar en ese PC. */
+  PC_RUNTIME_KEYS.concat(['pc']).forEach(function (k) {
+    PLATFORM_TO_OWNED[k] = PC_RUNTIME_KEYS.slice();
+  });
+  function ownedConfigured() { return Array.isArray(ownedPlatforms); }
+  function effectiveOwnedKeys() {
+    if (!ownedConfigured()) return OWNED_PLATFORM_KEYS.slice();
+    var out = [];
+    ownedPlatforms.map(function (v) { return keyOf('o', v); }).forEach(function (k) {
+      if (OWNED_PLATFORM_KEYS.indexOf(k) !== -1 && out.indexOf(k) === -1) out.push(k);
+    });
+    return out;
+  }
+  function gameMatchesOwned(g) {
+    if (!ownedConfigured()) return true;
+    var owned = effectiveOwnedKeys();
+    if (!owned.length) return false;
+    var pk = keyOf('p', g.platform);
+    var capable = PLATFORM_TO_OWNED[pk];
+    if (!capable) {
+      /* Plataforma personalizada: intenta matchear por alias de consola. */
+      var ok = keyOf('o', g.platform);
+      if (ok && OWNED_PLATFORM_KEYS.indexOf(ok) !== -1) capable = [ok];
+      else if (/pc|steam|windows|epic|ea app|battle\.net|battlenet|blizzard|ubisoft|gog|game pass|riot|launcher/i.test(String(g.platform || ''))) capable = PC_RUNTIME_KEYS;
+      else return false;
+    }
+    return capable.some(function (k) { return owned.indexOf(k) !== -1; });
+  }
+  function ownedLabelList(keys) {
+    return (keys || []).map(function (k) { return displayValue('o', k); });
+  }
+  function renderOwnedBadge(keysOverride, configuredOverride) {
+    var badge = $('owned-badge');
+    if (!badge) return;
+    var configured = configuredOverride === undefined ? ownedConfigured() : !!configuredOverride;
+    var keys = keysOverride || effectiveOwnedKeys();
+    badge.textContent = String(keys.length);
+    badge.title = configured ? ownedLabelList(keys).join(', ') : t('owned.allAssumed');
+    var btn = $('btn-owned');
+    if (btn) btn.classList.toggle('configured', configured);
+  }
+  function renderOwnedChips() {
+    var box = $('ow-chips');
+    if (!box) return;
+    var keys = effectiveOwnedKeys();
+    box.innerHTML = CONSOLE_GROUPS.map(function (group) {
+      var chips = group.keys.map(function (k) {
+        var on = keys.indexOf(k) !== -1;
+        return '<button class="genre-chip" type="button" data-owned-toggle="' + esc(k) + '" aria-pressed="' + on + '">' + esc(displayValue('o', k)) + '</button>';
+      }).join('');
+      return '<div class="owned-group" role="group" aria-label="' + esc(t(group.label)) + '">' +
+        '<h4 class="owned-group-title">' + esc(t(group.label)) + '</h4>' +
+        '<div class="owned-group-chips">' + chips + '</div></div>';
+    }).join('');
+    var msg = $('ow-msg');
+    if (msg) msg.textContent = keys.length ? t('owned.selected', { n: keys.length }) : t('owned.noneSelected');
+  }
+  /* La seleccion se guarda en el momento: ya no hay modal con boton Guardar. */
+  function saveOwnedKeys(keys) {
+    var clean = OWNED_PLATFORM_KEYS.filter(function (k) { return keys.indexOf(k) !== -1; });
+    /* Dejar todas marcadas equivale a no configurar nada (se asumen todas). */
+    ownedPlatforms = (clean.length && clean.length < OWNED_PLATFORM_KEYS.length) ? clean : null;
+    try { if (STORAGE.saveOwnedPlatforms) STORAGE.saveOwnedPlatforms(ownedPlatforms); } catch (e) {}
+    renderAll();
+  }
+  function toggleOwnedKey(k) {
+    var keys = effectiveOwnedKeys();
+    var i = keys.indexOf(k);
+    if (i === -1) keys.push(k); else keys.splice(i, 1);
+    saveOwnedKeys(keys);
+  }
+  function selectAllOwned() { saveOwnedKeys(OWNED_PLATFORM_KEYS.slice()); }
+
+  /* ---------- vistas principales ---------- */
+  function setView(view) {
+    currentView = view === 'consoles' ? 'consoles' : 'collection';
+    ['collection', 'consoles'].forEach(function (name) {
+      var panel = $('view-' + name);
+      if (panel) panel.hidden = name !== currentView;
+    });
+    var tabs = $('view-tabs');
+    if (tabs) {
+      Array.prototype.forEach.call(tabs.querySelectorAll('[data-view]'), function (btn) {
+        btn.setAttribute('aria-pressed', String(btn.getAttribute('data-view') === currentView));
+      });
+    }
+    try { localStorage.setItem(VIEW_KEY, currentView); } catch (e) {}
+  }
+  function initView() {
+    var saved = null;
+    try { saved = localStorage.getItem(VIEW_KEY); } catch (e) {}
+    setView(saved === 'consoles' ? 'consoles' : 'collection');
   }
 
   /* ---------- almacenamiento ---------- */
@@ -119,6 +384,8 @@
     var res = STORAGE.load();
     state.games = res && Array.isArray(res.games) ? res.games : [];
     storageOk = !!(res && res.storageOk);
+    try { ownedPlatforms = STORAGE.loadOwnedPlatforms ? STORAGE.loadOwnedPlatforms() : null; }
+    catch (e) { ownedPlatforms = null; }
   }
 
   /* ---------- portadas y metadatos: Wikipedia / Wikidata (CORS con origin=*) ---------- */
@@ -291,7 +558,7 @@
       '&exintro=1' +
       '&explaintext=1' +
       '&exsentences=3' +
-      '&cllimit=20' +
+      '&cllimit=50' +
       '&piprop=thumbnail' +
       '&pithumbsize=500' +
       '&pilicense=any' +
@@ -332,6 +599,17 @@
       '&format=json' +
       '&origin=*';
   }
+  function wikidataClaimIds(claims, prop) {
+    var arr = claims && claims[prop];
+    if (!arr || !arr.length) return [];
+    var ids = [];
+    arr.forEach(function (c) {
+      if (!c || c.rank === 'deprecated') return;
+      var v = c.mainsnak && c.mainsnak.datavalue && c.mainsnak.datavalue.value;
+      if (v && v.id && /^Q\d+$/.test(v.id) && ids.indexOf(v.id) === -1) ids.push(v.id);
+    });
+    return ids;
+  }
 
   function firstExtract(data, wanted) {
     var pages = data && data.query && data.query.pages ? data.query.pages : null;
@@ -368,32 +646,34 @@
 
   /* Palabras clave del extracto/categorias en ingles mapeadas al selector de generos. */
   var GENRE_HINTS = [
-    { key: 'rpg', re: /\brpg\b|\bjrpgs?\b|role[- ]playing|turn[- ]based|soulslike/i },
+    { key: 'rpg', re: /\brpgs?\b|\bjrpgs?\b|role[- ]playing|turn[- ]based|soulslike/i },
     { key: 'horror', re: /horror|psychological thriller/i },
-    { key: 'fighting', re: /fighting game|\bfighters?\b|beat ['’]em up|hack and slash/i },
-    { key: 'racing', re: /racing|motorsport|driving game/i },
-    { key: 'shooter', re: /shooter|\bfps\b|bullet hell|first[- ]person|third[- ]person/i },
-    { key: 'platformer', re: /platformer|platform game|metroidvania|side[- ]scrolling|jump[- ]and[- ]run/i },
-    { key: 'puzzle', re: /puzzle|logic game|brain teaser|match[- ]three/i },
+    { key: 'fighting', re: /fighting games?|\bfighters?\b|beat ['’]em up|hack and slash/i },
+    { key: 'racing', re: /racing|motorsport|driving games?/i },
+    { key: 'shooter', re: /shooters?|\bfps\b|bullet hell|first[- ]person shooter|third[- ]person shooter/i },
+    { key: 'platformer', re: /platformers?|platform games?|metroidvania|side[- ]scrolling|jump[- ]and[- ]run/i },
+    { key: 'puzzle', re: /puzzles?|logic games?|brain teaser|match[- ]three/i },
     { key: 'strategy', re: /strategy|tactical|\brts\b|real[- ]time strategy|4x\b/i },
-    { key: 'sports', re: /sports? game|football|basketball|soccer|baseball|tennis|golf/i },
+    { key: 'sports', re: /sports? games?|association football|football|basketball|soccer|baseball|tennis|golf/i },
     { key: 'simulation', re: /simulation|simulator|sandbox|farming sim|life sim/i },
-    { key: 'adventure', re: /adventure|visual novel|interactive fiction|point[- ]and[- ]click|narrative/i },
-    { key: 'action', re: /\baction\b/ },
-    { key: 'indie', re: /\bindie\b|independent game/i }
+    { key: 'adventure', re: /adventure games?|visual novels?|interactive fiction|point[- ]and[- ]click|narrative/i },
+    { key: 'action', re: /\baction\b|action[- ]adventure/i },
+    { key: 'indie', re: /\bindie\b|independent games?/i }
   ];
-  function detectGenre(extract, categories) {
+
+  /* Recopila TODOS los generos presentes en el extracto y en las categorias. */
+  function detectGenres(extract, categories) {
     var cats = (categories || []).map(function (c) {
       return typeof c === 'string' ? c : ((c && c.title) || '');
     }).join(' ');
     var text = String(extract || '') + ' ' + cats;
-    if (!text.trim()) return '';
-    for (var i = 0; i < GENRE_HINTS.length; i++) {
-      if (GENRE_HINTS[i].re.test(text)) return GENRE_HINTS[i].key;
-    }
-    return '';
+    if (!text.trim()) return [];
+    var out = [];
+    GENRE_HINTS.forEach(function (hint) {
+      if (hint.re.test(text) && out.indexOf(hint.key) === -1) out.push(hint.key);
+    });
+    return out;
   }
-
   function bestClaim(claims, prop) {
     var arr = claims && claims[prop];
     if (!arr || !arr.length) return null;
@@ -449,7 +729,8 @@
       var page = pickBestPage(data, title, false);
       if (!page) return result;
       if (page.thumbnail && page.thumbnail.source) result.cover = page.thumbnail.source;
-      result.genre = detectGenre(page.extract, page.categories);
+      result.genres = detectGenres(page.extract, page.categories);
+      result.genre = result.genres[0] || '';
       result.enSummary = cleanSummary(page.extract, 2);
       var qid = page.pageprops && page.pageprops.wikibase_item;
       if (!qid || !/^Q\d+$/.test(qid)) return result;
@@ -458,6 +739,7 @@
         if (!entity) return result;
         result.wikidata = entity;
         result.wikidataDescription = cleanSummary(pickDescription(entity, lang), 2);
+        result.platformQids = wikidataClaimIds(entity.claims, 'P400');
         var dateValue = claimValue(entity.claims, 'P577');
         var rel = parseWikidate(dateValue && dateValue.time ? dateValue.time : dateValue);
         if (rel) result.releaseDate = rel;
@@ -507,10 +789,13 @@
       renderCoverPreview();
       done.push(t('meta.cover'));
     }
-    if (result.genre) {
-      var glabel = displayValue('g', result.genre);
-      $('e-genre').value = glabel;
-      done.push(glabel);
+    var foundGenres = (result.genres && result.genres.length) ? result.genres : (result.genre ? [result.genre] : []);
+    if (foundGenres.length) {
+      foundGenres.forEach(function (k) {
+        if (editGenres.indexOf(k) === -1) editGenres.push(k);
+      });
+      renderGenreChips();
+      done.push(foundGenres.map(function (k) { return displayValue('g', k); }).join(', '));
     }
     if (result.releaseDate) { $('e-release').value = result.releaseDate; done.push(result.releaseDate); }
     if (result.developer) { $('e-dev').value = result.developer; done.push(result.developer); }
@@ -557,8 +842,9 @@
   /* ---------- filtrado ---------- */
   function matchesBase(g) {
     if (state.f.plat && keyOf('p', g.platform) !== state.f.plat) return false;
-    if (state.f.genre && keyOf('g', g.genre) !== state.f.genre) return false;
+    if (state.f.genre && genresOf(g).indexOf(state.f.genre) === -1) return false;
     if (state.f.q && g.title.toLowerCase().indexOf(state.f.q.toLowerCase()) === -1) return false;
+    if (state.f.ownedOnly && !gameMatchesOwned(g)) return false;
     return true;
   }
   function visible() {
@@ -580,7 +866,10 @@
   }
   function uniqValues(kind) {
     var m = {};
-    state.games.forEach(function (g) { var k = keyOf(kind, g[kind === 'p' ? 'platform' : 'genre']); if (k) m[k] = true; });
+    state.games.forEach(function (g) {
+      var values = kind === 'p' ? [g.platform] : genresOf(g);
+      values.forEach(function (v) { var k = keyOf(kind, v); if (k) m[k] = true; });
+    });
     return Object.keys(m).sort(function (a, b) { return displayValue(kind, a).localeCompare(displayValue(kind, b), localeTag()); });
   }
 
@@ -653,11 +942,16 @@
     if (el.value !== current) el.value = '';
   }
   function renderFilters() {
-    var pl = uniqValues('p'), ge = uniqValues('g');
+    /* El filtro de plataforma ofrece el catalogo completo, no solo lo que haya en la biblioteca. */
+    var pl = PLATFORM_KEYS.slice(), ge = uniqValues('g');
     if (state.f.plat && pl.indexOf(state.f.plat) === -1) state.f.plat = '';
     if (state.f.genre && ge.indexOf(state.f.genre) === -1) state.f.genre = '';
     fillSelect($('f-plat'), 'p', t('filter.platform'), pl, state.f.plat);
     fillSelect($('f-genre'), 'g', t('filter.genre'), ge, state.f.genre);
+    var own = $('f-owned');
+    if (own) own.checked = !!state.f.ownedOnly;
+    var wrap = $('owned-toggle-wrap');
+    if (wrap) wrap.title = ownedConfigured() ? t('filter.ownedOnlyTitle', { list: ownedLabelList(effectiveOwnedKeys()).join(', ') }) : t('owned.allAssumed');
   }
   function fillDataLists() {
     $('dl-plat').innerHTML = PLATFORM_KEYS.map(function (k) {
@@ -686,7 +980,7 @@
       '<button class="card" type="button" data-open="' + g.id + '" style="width:100%" aria-label="' + esc(t('card.editAria', { title: g.title })) + '">' +
         coverHtml(g, 'cover') +
         '<div class="meta"><span class="t" title="' + esc(g.title) + '">' + esc(g.title) + '</span>' +
-        '<span class="g">' + esc(g.genre ? displayValue('g', g.genre) : t('card.noGenre')) + '</span>' +
+        genreTagsHtml(g) +
         (detail ? '<span class="d" title="' + esc(detail) + '">' + esc(detail) + '</span>' : '') + '</div>' +
       '</button>' +
       '<div class="row"><span class="pill" style="--c:' + st.color + '">' + esc(statusLabel(st)) + '</span>' +
@@ -709,15 +1003,60 @@
     $('grid').innerHTML = list.map(cardHtml).join('');
   }
 
+  /* Coleccion agrupada por consola dentro de la pestana "Mis Consolas". */
+  function renderConsoleGames() {
+    var box = $('console-game-groups');
+    if (!box) return;
+    var groups = (STORAGE && typeof STORAGE.groupGamesByPlatform === 'function')
+      ? STORAGE.groupGamesByPlatform(state.games,
+          function (value) { return keyOf('p', value); },
+          function (k) { return displayValue('p', k); })
+      : [];
+    if (!groups.length) {
+      box.innerHTML = '<p class="msg">' + esc(t('console.empty')) + '</p>';
+      return;
+    }
+    box.innerHTML = groups.map(function (grp) {
+      var summary = esc(t('stats.platformDetail', { n: grp.games.length, h: fmtNum(grp.hours) }));
+      var items = grp.games.map(function (g) {
+        var st = SMAP[g.status] || SMAP.pendiente;
+        return '<button class="console-game-item" type="button" data-open="' + esc(g.id) + '"' +
+          ' aria-label="' + esc(t('card.editAria', { title: g.title })) + '">' +
+          '<span class="dot" style="--c:' + st.color + '"></span>' +
+          '<span class="t">' + esc(g.title) + '</span>' +
+          '<span class="h num">' + fmtNum(g.hours) + ' h</span></button>';
+      }).join('');
+      return '<div class="console-game-group">' +
+        '<h3>' + esc(grp.label) + ' <span class="num">(' + summary + ')</span></h3>' +
+        '<div class="console-game-list">' + items + '</div></div>';
+    }).join('');
+  }
+
+  function showFlash(text) {
+    flashNote = text || '';
+    renderNotes();
+    if (flashTimer) clearTimeout(flashTimer);
+    if (flashNote) flashTimer = setTimeout(function () { flashNote = ''; renderNotes(); }, 6000);
+  }
   function renderNotes() {
     var h = '';
+    if (flashNote) h += '<div class="note"><span><b>' + esc(flashNote) + '</b></span></div>';
     var ex = state.games.filter(function (g) { return g.example; }).length;
     if (ex) h += '<div class="note"><span><b>' + esc(t('note.examplesTitle')) + '</b> ' + esc(t('note.examplesText')) + '</span><button class="btn" type="button" data-clear-ex>' + esc(t('note.clearExamples')) + '</button></div>';
     if (!storageOk) h += '<div class="note"><span><b>' + esc(t('note.storageTitle')) + '</b> ' + esc(t('note.storageText')) + '</span></div>';
     $('notes').innerHTML = h;
   }
 
-  function renderAll() { renderFilters(); renderStats(); renderTabs(); renderGrid(); renderNotes(); }
+  function renderAll() {
+    renderOwnedBadge();
+    renderOwnedChips();
+    renderFilters();
+    renderStats();
+    renderTabs();
+    renderGrid();
+    renderConsoleGames();
+    renderNotes();
+  }
   /* Alias publico de renderizado para el arranque y para depuracion. */
   function render() { renderAll(); }
 
@@ -726,6 +1065,28 @@
     var h = '';
     for (var i = 1; i <= 10; i++) h += '<button type="button" data-sc="' + i + '" aria-pressed="' + (editScore === i) + '">' + i + '</button>';
     $('e-scores').innerHTML = h;
+  }
+  function renderGenreChips() {
+    var box = $('e-genres');
+    if (!box) return;
+    box.innerHTML = GENRE_KEYS.map(function (k) {
+      var on = editGenres.indexOf(k) !== -1;
+      return '<button class="genre-chip" type="button" data-genre-toggle="' + k + '" aria-pressed="' + on + '">' + esc(t('genre.' + k)) + '</button>';
+    }).join('');
+  }
+  function setEditGenres(list) {
+    editGenres = [];
+    (list || []).forEach(function (v) {
+      var k = keyOf('g', v);
+      if (k && editGenres.indexOf(k) === -1) editGenres.push(k);
+    });
+    renderGenreChips();
+  }
+  function toggleGenre(key) {
+    var i = editGenres.indexOf(key);
+    if (i === -1) editGenres.push(key);
+    else editGenres.splice(i, 1);
+    renderGenreChips();
   }
   function renderCoverPreview() {
     var txt = $('e-title').value.trim() || t('game.untitled');
@@ -761,7 +1122,7 @@
     $('ed-title').textContent = t(g ? 'editor.editTitle' : 'editor.addTitle');
     $('e-title').value = g ? g.title : '';
     $('e-plat').value = g ? displayValue('p', g.platform) : (state.f.plat ? displayValue('p', state.f.plat) : '');
-    $('e-genre').value = g ? displayValue('g', g.genre) : (state.f.genre ? displayValue('g', state.f.genre) : '');
+    setEditGenres(g ? genresOf(g) : (state.f.genre ? [state.f.genre] : []));
     $('e-status').innerHTML = statusOptions();
     $('e-status').value = g ? g.status : (state.f.status !== 'todos' ? state.f.status : 'pendiente');
     $('e-hours').value = g ? g.hours : 0;
@@ -794,7 +1155,8 @@
     var data = {
       title: title,
       platform: keyOf('p', $('e-plat').value.trim()),
-      genre: keyOf('g', $('e-genre').value.trim()),
+      genres: editGenres.slice(),
+      genre: editGenres[0] || '',
       releaseDate: rel.releaseDate,
       releaseYear: rel.releaseYear,
       developer: $('e-dev').value.trim().slice(0, 80),
@@ -884,7 +1246,8 @@
     var pending = state.games.filter(function (x) { return x.status === 'pendiente'; }).length;
     $('r-body').innerHTML = '<div class="pick">' + coverHtml(g, 'cover') +
       '<div class="info"><h4>' + esc(g.title) + '</h4>' +
-      '<p>' + esc(g.genre ? displayValue('g', g.genre) : t('roulette.noGenre')) + ' · ' + esc(t('roulette.pendingCount', { n: pending })) + '</p>' +
+      '<p>' + genreTagsHtml(g, t('roulette.noGenre')) + '</p>' +
+      '<p>' + esc(t('roulette.pendingCount', { n: pending })) + '</p>' +
       (g.score ? '<p>' + esc(t('roulette.score', { n: g.score })) + '</p>' : '') +
       '</div></div>';
     $('r-start').disabled = false;
@@ -926,6 +1289,394 @@
   }
   function closeRoulette() { rollToken++; setOverlay('ov-random', false); }
 
+  /* ---------- recomendaciones: generos favoritos + consolas disponibles, Wikipedia + Wikidata, sin API key ---------- */
+  var RECOMMEND_STATUSES = ['completado', 'platino', 'pendiente'];
+  var RECOMMEND_CATEGORIES = {
+    action: ['Category:Action video games'],
+    adventure: ['Category:Adventure games'],
+    rpg: ['Category:Role-playing video games', 'Category:Action role-playing video games'],
+    platformer: ['Category:Platformers', 'Category:Platform games'],
+    shooter: ['Category:Shooter games'],
+    strategy: ['Category:Strategy video games'],
+    sports: ['Category:Sports video games', 'Category:Association football video games'],
+    racing: ['Category:Racing video games'],
+    horror: ['Category:Survival horror games', 'Category:Horror video games'],
+    puzzle: ['Category:Puzzle video games'],
+    indie: ['Category:Indie games'],
+    fighting: ['Category:Fighting games'],
+    simulation: ['Category:Simulation video games']
+  };
+  var RECOMMEND_PLATFORM_CATEGORIES = {
+    pcSteam: ['Category:Windows games', 'Category:PC games'],
+    pcEmulator: ['Category:Windows games', 'Category:PC games'],
+    steamDeck: ['Category:Steam Deck games', 'Category:Windows games'],
+    mobile: ['Category:IOS games', 'Category:Android (operating system) games'],
+    ps5: ['Category:PlayStation 5 games'],
+    ps4: ['Category:PlayStation 4 games'],
+    ps4Emulator: ['Category:PlayStation 4 games'],
+    ps3: ['Category:PlayStation 3 games'],
+    ps3Emulator: ['Category:PlayStation 3 games'],
+    ps2: ['Category:PlayStation 2 games'],
+    ps1: ['Category:PlayStation (console) games'],
+    psp: ['Category:PlayStation Portable games'],
+    psVita: ['Category:PlayStation Vita games'],
+    switch2: ['Category:Nintendo Switch 2 games'],
+    switch: ['Category:Nintendo Switch games'],
+    switchEmulator: ['Category:Nintendo Switch games'],
+    wiiU: ['Category:Wii U games'],
+    wii: ['Category:Wii games'],
+    gamecube: ['Category:GameCube games'],
+    n64: ['Category:Nintendo 64 games'],
+    snes: ['Category:Super Nintendo Entertainment System games'],
+    nes: ['Category:Nintendo Entertainment System games'],
+    n3ds: ['Category:Nintendo 3DS games'],
+    nds: ['Category:Nintendo DS games'],
+    gba: ['Category:Game Boy Advance games'],
+    gameboy: ['Category:Game Boy games', 'Category:Game Boy Color games'],
+    xboxSeries: ['Category:Xbox Series X and Series S games'],
+    xboxOne: ['Category:Xbox One games'],
+    xbox360: ['Category:Xbox 360 games'],
+    genesis: ['Category:Sega Genesis games', 'Category:Mega Drive games'],
+    dreamcast: ['Category:Dreamcast games'],
+    retroEmulator: ['Category:PlayStation 2 games', 'Category:PlayStation (console) games',
+      'Category:Super Nintendo Entertainment System games', 'Category:Nintendo Entertainment System games',
+      'Category:Game Boy Advance games', 'Category:Sega Genesis games']
+  };
+  /* Todos los clientes de PC buscan el mismo catalogo que PC / Steam. */
+  PC_RUNTIME_KEYS.forEach(function (k) {
+    RECOMMEND_PLATFORM_CATEGORIES[k] = ['Category:Windows games', 'Category:PC games'];
+  });
+  /* QIDs verificados en Wikidata (entidades de hardware usadas en P400 "platform"). */
+  var WIKIDATA_PLATFORM_QIDS = {
+    pcSteam: ['Q1406', 'Q1074923'],
+    pcEmulator: ['Q1406', 'Q1074923'],
+    steamDeck: ['Q107542665'],
+    mobile: ['Q48493', 'Q94'],
+    ps5: ['Q63184502'],
+    ps4: ['Q5014725'],
+    ps4Emulator: ['Q5014725'],
+    ps3: ['Q10683'],
+    ps3Emulator: ['Q10683'],
+    ps2: ['Q10680'],
+    ps1: ['Q10677'],
+    psp: ['Q170325'],
+    psVita: ['Q188808'],
+    switch2: ['Q122761124'],
+    switch: ['Q19610114'],
+    switchEmulator: ['Q19610114'],
+    wiiU: ['Q56942'],
+    wii: ['Q8079'],
+    gamecube: ['Q182172'],
+    n64: ['Q184839'],
+    snes: ['Q183259'],
+    nes: ['Q172742'],
+    n3ds: ['Q203597'],
+    nds: ['Q170323'],
+    gba: ['Q188642'],
+    gameboy: ['Q186437', 'Q203992'],
+    xboxSeries: ['Q98973368', 'Q98973369'],
+    xboxOne: ['Q13361286'],
+    xbox360: ['Q48263'],
+    genesis: ['Q10676'],
+    dreamcast: ['Q184198'],
+    retroEmulator: ['Q10680', 'Q10677', 'Q170325', 'Q188642', 'Q186437', 'Q203992',
+      'Q184839', 'Q183259', 'Q172742', 'Q170323', 'Q203597', 'Q10676', 'Q184198']
+  };
+  /* Microsoft Windows (Q1406) y PC (Q1074923): mismo criterio P400 que PC / Steam. */
+  PC_RUNTIME_KEYS.forEach(function (k) {
+    WIKIDATA_PLATFORM_QIDS[k] = ['Q1406', 'Q1074923'];
+  });
+
+  /* Los generos favoritos salen de completados/platino/pendientes; la nota personal pesa mas. */
+  function favoriteGenres() {
+    var weights = {};
+    state.games.forEach(function (g) {
+      if (RECOMMEND_STATUSES.indexOf(g.status) === -1) return;
+      var weight = 1 + (g.score ? g.score / 2 : 0);
+      genresOf(g).forEach(function (k) { weights[k] = (weights[k] || 0) + weight; });
+    });
+    return Object.keys(weights).sort(function (a, b) {
+      return weights[b] - weights[a] || GENRE_KEYS.indexOf(a) - GENRE_KEYS.indexOf(b);
+    }).slice(0, 3);
+  }
+  function recommendReason() {
+    if (!recommendGenres.length) return t('recommend.reasonEmpty');
+    var genres = recommendGenres.map(function (k) { return displayValue('g', k); }).join(', ');
+    var platforms = recommendPlatforms.map(function (k) { return displayValue('o', k); }).join(', ');
+    if (platforms) return t('recommend.reasonOwned', { genres: genres, platforms: platforms });
+    return t('recommend.reason', { genres: genres });
+  }
+  function compatibleOwnedPlatforms(result) {
+    var qids = result && result.platformQids ? result.platformQids : [];
+    var wanted = recommendPlatforms.length ? recommendPlatforms : OWNED_PLATFORM_KEYS.slice();
+    var out = [];
+    wanted.forEach(function (k) {
+      var allowed = WIKIDATA_PLATFORM_QIDS[k] || [];
+      for (var i = 0; i < qids.length; i++) {
+        if (allowed.indexOf(qids[i]) !== -1) { out.push(k); return; }
+      }
+    });
+    return out;
+  }
+  function recommendPlatformCompatible(result) {
+    if (!recommendPlatforms.length) return true;
+    var qids = result && result.platformQids ? result.platformQids : [];
+    if (!qids.length) return true; /* sin datos P400, no descartamos por falta de señal */
+    return compatibleOwnedPlatforms(result).length > 0;
+  }
+  function recommendPlatformLabel(rec) {
+    var keys = rec && rec.compatiblePlatforms ? rec.compatiblePlatforms : [];
+    if (keys.length) return keys.map(function (k) { return displayValue('o', k); }).join(' / ');
+    if (recommendPlatforms.length) return recommendPlatforms.map(function (k) { return displayValue('o', k); }).join(' / ');
+    return t('recommend.anyPlatform');
+  }
+  function inCollection(title) {
+    var n = normTitle(title), b = titleBase(title);
+    if (!n) return false;
+    return state.games.some(function (g) {
+      return normTitle(g.title) === n || titleBase(g.title) === n || titleBase(g.title) === b;
+    });
+  }
+  function markSeen(title) {
+    var n = normTitle(title);
+    if (n) recommendSeen[n] = true;
+  }
+  function isSeen(title) { return !!recommendSeen[normTitle(title)]; }
+  function categoryMembersUrl(cat) {
+    return wikiApi('en') +
+      '?action=query' +
+      '&list=categorymembers' +
+      '&cmtitle=' + encodeURIComponent(String(cat).replace(/ /g, '_')) +
+      '&cmnamespace=0' +
+      '&cmtype=page' +
+      '&cmlimit=50' +
+      '&format=json' +
+      '&origin=*';
+  }
+  function candidateOk(title) {
+    var s = String(title || '').trim();
+    if (s.length < 3) return false;
+    if (/^(Category|Wikipedia|File|Template|List):/i.test(s)) return false;
+    if (/\b(list of|video game series|series|franchise|genre|industry|development of|games developed)\b/i.test(s)) return false;
+    var n = normTitle(s);
+    if (GENRE_KEYS.some(function (k) { return normTitle(k) === n || normTitle(t('genre.' + k)) === n; })) return false;
+    return true;
+  }
+  function shuffle(list) {
+    var out = list.slice();
+    for (var i = out.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var tmp = out[i]; out[i] = out[j]; out[j] = tmp;
+    }
+    return out;
+  }
+  function fetchCandidates(genres, platforms) {
+    var cats = [];
+    (genres || []).slice(0, 3).forEach(function (k) {
+      (RECOMMEND_CATEGORIES[k] || []).forEach(function (c) { if (cats.indexOf(c) === -1) cats.push(c); });
+    });
+    var hasPlatforms = platforms && platforms.length;
+    if (hasPlatforms) {
+      (platforms || []).slice(0, 4).forEach(function (k) {
+        (RECOMMEND_PLATFORM_CATEGORIES[k] || []).slice(0, 2).forEach(function (c) { if (cats.indexOf(c) === -1) cats.push(c); });
+      });
+    }
+    if (!cats.length) cats = ['Category:Video games'];
+    return Promise.all(cats.map(function (cat) {
+      return fetchJson(categoryMembersUrl(cat), 10000).then(function (data) {
+        var members = data && data.query && data.query.categorymembers ? data.query.categorymembers : [];
+        return members.map(function (m) { return m && m.title ? m.title : ''; }).filter(candidateOk);
+      }).catch(function () { return []; });
+    })).then(function (lists) {
+      var out = {}, seen = {};
+      lists.forEach(function (list) {
+        list.forEach(function (title) {
+          var n = normTitle(title);
+          if (!n || seen[n]) return;
+          seen[n] = true;
+          out[n] = title;
+        });
+      });
+      return shuffle(Object.keys(out).map(function (n) { return out[n]; }));
+    });
+  }
+  function showRecommendStatus(text, kind) {
+    var el = $('rc-status');
+    if (!el) return;
+    el.className = 'help autofill-msg' + (kind ? ' is-' + kind : '');
+    el.textContent = text || '';
+    el.hidden = !text;
+  }
+  function setRecommendBusy(busy) {
+    var again = $('rc-again'), add = $('rc-add');
+    if (again) again.disabled = !!busy;
+    if (add) add.disabled = !!busy || !recommendCurrent;
+  }
+  function renderRecommendReason() {
+    var el = $('rc-reason');
+    if (el) el.textContent = recommendReason();
+  }
+  function renderRecommendCard(rec) {
+    var list = genresOf(rec);
+    var genresHtml = list.length
+      ? '<div class="rec-tags">' + list.map(function (k) { return '<span class="gtag">' + esc(displayValue('g', k)) + '</span>'; }).join('') + '</div>'
+      : esc(t('card.noGenre'));
+    $('rc-body').innerHTML = '<div class="pick rec-pick">' +
+      coverHtml({ title: rec.title, cover: rec.cover }, 'cover') +
+      '<div class="info"><h4>' + esc(rec.title) + '</h4>' +
+      '<dl class="facts">' +
+        '<div class="fact"><dt>' + esc(t('recommend.genres')) + '</dt><dd>' + genresHtml + '</dd></div>' +
+        '<div class="fact"><dt>' + esc(t('recommend.platform')) + '</dt><dd>' + esc(recommendPlatformLabel(rec)) + '</dd></div>' +
+        '<div class="fact"><dt>' + esc(t('recommend.developer')) + '</dt><dd>' + esc(rec.developer || t('recommend.unknown')) + '</dd></div>' +
+        '<div class="fact"><dt>' + esc(t('recommend.year')) + '</dt><dd>' + esc(rec.releaseDate || t('recommend.unknown')) + '</dd></div>' +
+      '</dl>' +
+      '<p class="rec-summary">' + esc(rec.summary || t('recommend.noSummary')) + '</p>' +
+      '</div></div>';
+  }
+  function finishRecommendation(result, title, token) {
+    if (token !== recommendToken || $('ov-recommend').hidden) return null;
+    var rel = splitRelease(result.releaseDate || '');
+    var rawGenres = (result.genres && result.genres.length) ? result.genres : (result.genre ? [result.genre] : []);
+    var rec = {
+      title: String(title).trim(),
+      cover: result.cover || '',
+      genres: rawGenres.map(function (k) { return keyOf('g', k); }).filter(Boolean),
+      releaseDate: rel.releaseDate,
+      releaseYear: rel.releaseYear,
+      developer: result.developer || '',
+      summary: result.summary || '',
+      compatiblePlatforms: compatibleOwnedPlatforms(result),
+      platformQids: result.platformQids || []
+    };
+    recommendCurrent = rec;
+    markSeen(title);
+    renderRecommendCard(rec);
+    showRecommendStatus('', '');
+    setRecommendBusy(false);
+    return rec;
+  }
+  function tryRecommendCandidate(list, i, token, lang) {
+    if (token !== recommendToken) return Promise.resolve(null);
+    if (i >= Math.min(list.length, 10)) return Promise.resolve(null);
+    var title = list[i];
+    if (isSeen(title) || inCollection(title)) return tryRecommendCandidate(list, i + 1, token, lang);
+    return collectMetadata(title, lang).then(function (result) {
+      if (token !== recommendToken) return null;
+      var useful = result && (result.cover || result.summary || result.releaseDate || result.developer ||
+        (result.genres && result.genres.length));
+      if (!useful || inCollection(title)) {
+        markSeen(title);
+        return tryRecommendCandidate(list, i + 1, token, lang);
+      }
+      if (!recommendPlatformCompatible(result)) {
+        markSeen(title);
+        return tryRecommendCandidate(list, i + 1, token, lang);
+      }
+      if (result.cover) return finishRecommendation(result, title, token);
+      return fetchCoverRaw(title).then(function (src) {
+        if (src) result.cover = src;
+        return finishRecommendation(result, title, token);
+      }).catch(function () { return finishRecommendation(result, title, token); });
+    }).catch(function () {
+      if (token !== recommendToken) return null;
+      markSeen(title);
+      return tryRecommendCandidate(list, i + 1, token, lang);
+    });
+  }
+  function loadRecommendation(forceTitle) {
+    if ($('ov-recommend').hidden) return;
+    var token = ++recommendToken;
+    var lang = I.lang ? I.lang() : I.current();
+    recommendCurrent = null;
+    setRecommendBusy(true);
+    showRecommendStatus(t('recommend.searching'), 'searching');
+    $('rc-body').innerHTML = '<div class="pick shuffling"><div class="cover" style="' + coverStyle(t('recommend.searching')) + '"><span class="ini">?</span></div>' +
+      '<div class="info"><h4>' + esc(t('recommend.searching')) + '</h4></div></div>';
+    var source = forceTitle
+      ? Promise.resolve([forceTitle])
+      : fetchCandidates(recommendGenres, recommendPlatforms);
+    source.then(function (candidates) {
+      if (token !== recommendToken) return null;
+      var pool = forceTitle
+        ? [forceTitle]
+        : candidates.filter(function (title) { return !isSeen(title) && !inCollection(title); });
+      if (!pool.length) {
+        $('rc-body').innerHTML = '<p class="msg">' + esc(t('recommend.noCandidates')) + '</p>';
+        showRecommendStatus(t('recommend.noCandidates'), 'warn');
+        setRecommendBusy(false);
+        return { noCandidates: true };
+      }
+      return tryRecommendCandidate(pool, 0, token, lang);
+    }).then(function (rec) {
+      if (token !== recommendToken || (rec && rec.noCandidates)) return;
+      if (!rec) {
+        $('rc-body').innerHTML = '<p class="msg">' + esc(t('recommend.error')) + '</p>';
+        showRecommendStatus(t('recommend.error'), 'error');
+        setRecommendBusy(false);
+      }
+    }).catch(function () {
+      if (token !== recommendToken) return;
+      $('rc-body').innerHTML = '<p class="msg">' + esc(t('recommend.error')) + '</p>';
+      showRecommendStatus(t('recommend.error'), 'error');
+      setRecommendBusy(false);
+    });
+  }
+  function openRecommend() {
+    recommendGenres = favoriteGenres();
+    recommendPlatforms = ownedConfigured() ? effectiveOwnedKeys() : [];
+    recommendCurrent = null;
+    setOverlay('ov-recommend', true);
+    renderRecommendReason();
+    if (!recommendGenres.length) {
+      $('rc-body').innerHTML = '<p class="msg">' + esc(t('recommend.reasonEmpty')) + '</p>';
+      showRecommendStatus(t('recommend.reasonEmpty'), 'warn');
+      setRecommendBusy(false);
+      return;
+    }
+    loadRecommendation();
+  }
+  function closeRecommend() {
+    recommendToken++;
+    recommendCurrent = null;
+    setOverlay('ov-recommend', false);
+  }
+  function recommendPlatformForGame(rec) {
+    var keys = rec && rec.compatiblePlatforms ? rec.compatiblePlatforms : [];
+    if (!keys.length) keys = recommendPlatforms.length ? recommendPlatforms : [];
+    if (!keys.length) return '';
+    var k = keys[0];
+    /* pcSteam conserva el alias historico; los demas launchers guardan su clave. */
+    if (k === 'pcSteam') return 'pc';
+    if (k === 'retroEmulator') return 'retro';
+    return PLATFORM_KEYS.indexOf(k) !== -1 ? k : '';
+  }
+  function addRecommended() {
+    if (!recommendCurrent || inCollection(recommendCurrent.title)) return;
+    var rec = recommendCurrent;
+    var platform = recommendPlatformForGame(rec);
+    var data = {
+      title: rec.title,
+      platform: platform,
+      genres: rec.genres.slice(),
+      genre: rec.genres[0] || '',
+      releaseDate: rec.releaseDate,
+      releaseYear: rec.releaseYear,
+      developer: rec.developer,
+      summary: rec.summary.slice(0, 300),
+      status: 'pendiente',
+      hours: 0,
+      score: null,
+      notes: '',
+      cover: rec.cover,
+      coverSource: rec.cover ? 'wiki' : ''
+    };
+    var ng = STORAGE.normalize(data);
+    ng.id = uid(); ng.added = Date.now(); ng.updated = Date.now();
+    state.games.unshift(ng);
+    save(); renderAll(); closeRecommend();
+    showFlash(t('recommend.added') + ': ' + rec.title);
+  }
+
   /* ---------- copia de seguridad ---------- */
   function resetBackupButton() {
     var b = $('b-import');
@@ -961,7 +1712,12 @@
     });
     if (examplesChanged) save();
     fillDataLists();
+    renderGenreChips();
     renderAll();
+    if (!$('ov-recommend').hidden) {
+      renderRecommendReason();
+      if (recommendCurrent) loadRecommendation(recommendCurrent.title);
+    }
     if (!$('ov-edit').hidden) {
       $('ed-title').textContent = t(editingId ? 'editor.editTitle' : 'editor.addTitle');
       var currentStatus = $('e-status').value;
@@ -991,8 +1747,9 @@
   }
   function clearFilters() {
     state.f.status = 'todos';
-    state.f.plat = ''; state.f.genre = ''; state.f.q = '';
+    state.f.plat = ''; state.f.genre = ''; state.f.q = ''; state.f.ownedOnly = false;
     $('q').value = '';
+    var own = $('f-owned'); if (own) own.checked = false;
     renderAll();
   }
 
@@ -1000,6 +1757,14 @@
   on('btn-add', 'click', function () { openEditor(); });
   on('btn-backup', 'click', openBackup);
   on('btn-random', 'click', openRoulette);
+  on('btn-recommend', 'click', openRecommend);
+  on('ow-all', 'click', selectAllOwned);
+  on('rc-close', 'click', closeRecommend);
+  on('rc-again', 'click', function () {
+    if (recommendCurrent) markSeen(recommendCurrent.title);
+    loadRecommendation();
+  });
+  on('rc-add', 'click', addRecommended);
   on('e-cancel', 'click', closeEditor);
   on('e-save', 'click', saveEditor);
   on('e-del', 'click', deleteEditorGame);
@@ -1083,9 +1848,11 @@
   on('f-plat', 'change', function () { state.f.plat = this.value; renderAll(); });
   on('f-genre', 'change', function () { state.f.genre = this.value; renderAll(); });
   on('f-sort', 'change', function () { state.f.sort = this.value; renderAll(); });
+  on('f-owned', 'change', function () { state.f.ownedOnly = !!this.checked; renderAll(); });
 
   document.addEventListener('click', function (e) {
     var el;
+    if ((el = closest(e.target, '[data-view]'))) { setView(el.getAttribute('data-view')); return; }
     if ((el = closest(e.target, '[data-st]'))) { state.f.status = el.getAttribute('data-st'); renderAll(); return; }
     if ((el = closest(e.target, '[data-hour]'))) { addHour(el.getAttribute('data-hour')); return; }
     if ((el = closest(e.target, '[data-open]'))) { openEditor(el.getAttribute('data-open')); return; }
@@ -1095,6 +1862,10 @@
       state.games = state.games.filter(function (g) { return !g.example; });
       save(); renderAll(); return;
     }
+    if ((el = closest(e.target, '[data-genre-toggle]'))) { toggleGenre(el.getAttribute('data-genre-toggle')); return; }
+    if ((el = closest(e.target, '[data-owned-toggle]'))) {
+      toggleOwnedKey(el.getAttribute('data-owned-toggle')); return;
+    }
     if ((el = closest(e.target, '[data-sc]'))) { editScore = Number(el.getAttribute('data-sc')); buildScores(); return; }
     if ((el = closest(e.target, '[data-addh]'))) {
       var field = $('e-hours');
@@ -1103,6 +1874,7 @@
     }
     if (e.target === $('ov-edit')) closeEditor();
     if (e.target === $('ov-random')) closeRoulette();
+    if (e.target === $('ov-recommend')) closeRecommend();
     if (e.target === $('ov-backup')) closeBackup();
   });
 
@@ -1110,6 +1882,7 @@
     if (e.key === 'Escape') {
       if (!$('ov-edit').hidden) closeEditor();
       if (!$('ov-random').hidden) closeRoulette();
+      if (!$('ov-recommend').hidden) closeRecommend();
       if (!$('ov-backup').hidden) closeBackup();
       return;
     }
@@ -1122,17 +1895,40 @@
   });
   }
 
-  /* ---------- PWA: service worker ---------- */
+  /* ---------- PWA: service worker y purga de cache ---------- */
+  function purgeOldCaches() {
+    if (!('caches' in window)) return Promise.resolve(false);
+    try {
+      return caches.keys().then(function (keys) {
+        var old = keys.filter(function (key) {
+          return /^gamevault-/.test(key) && key !== CACHE_NAME;
+        });
+        if (!old.length) return false;
+        return Promise.all(old.map(function (key) { return caches.delete(key); }))
+          .then(function () { return true; });
+      }).catch(function () { return false; });
+    } catch (e) { return Promise.resolve(false); }
+  }
+  /* Una sola recarga limpia por version, incluso si el SW toma el control antes. */
+  function reloadClean() {
+    try {
+      if (sessionStorage.getItem(RELOAD_FLAG)) return;
+      sessionStorage.setItem(RELOAD_FLAG, '1');
+    } catch (e) {}
+    window.location.reload();
+  }
   function registerServiceWorker() {
     if (!('serviceWorker' in navigator)) return;
     if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') return;
-    var reloaded = false;
-    navigator.serviceWorker.addEventListener('controllerchange', function () {
-      if (reloaded) return;
-      reloaded = true;
-      window.location.reload();
-    });
-    navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(function () {});
+    navigator.serviceWorker.addEventListener('controllerchange', reloadClean);
+    purgeOldCaches().then(function (purged) {
+      /* La query fuerza al navegador a descargar el SW nuevo sin usar su HTTP cache. */
+      return navigator.serviceWorker.register('./sw.js?v=1.0.9', { scope: './' })
+        .then(function (registration) {
+          if (purged) setTimeout(reloadClean, 200);
+          return registration.update();
+        });
+    }).catch(function () {});
   }
 
   /* ---------- arranque garantizado ---------- */
@@ -1140,6 +1936,7 @@
     state: state,
     render: render,
     renderAll: renderAll,
+    setView: setView,
     applyTranslations: function () {
       try {
         if (I && typeof I.applyTranslations === 'function') I.applyTranslations(document);
@@ -1156,7 +1953,7 @@
   }
 
   function forceHiddenModals() {
-    ['ov-edit', 'ov-random', 'ov-backup'].forEach(function (id) { setOverlay(id, false); });
+    ['ov-edit', 'ov-random', 'ov-recommend', 'ov-backup'].forEach(function (id) { setOverlay(id, false); });
   }
 
   function boot() {
@@ -1172,7 +1969,9 @@
     catch (e) {
       window.GVApp.applyTranslations();
     }
+    try { initView(); } catch (e) {}
     try { fillDataLists(); } catch (e) {}
+    try { renderGenreChips(); } catch (e) {}
     try { render(); }
     catch (e) {
       /* Ultimo recurso: repintar con los juegos de ejemplo sin depender del estado. */

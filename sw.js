@@ -1,6 +1,6 @@
 /* GameVault service worker: Network-First for HTML, Cache-First for assets. */
-/* v1.0.4: invalida la cache anterior y deja pasar el trafico de Wikipedia/Wikimedia/Wikidata. */
-var CACHE = 'gamevault-v1.0.4';
+/* v1.0.9: purga forzada de las caches antiguas tras el rediseno visual del fondo y las tarjetas; deja pasar el trafico de Wikipedia/Wikimedia/Wikidata. */
+var CACHE = 'gamevault-v1.0.9';
 var ROOT = new URL('./', self.registration.scope).href;
 var PRECACHE = [
   './',

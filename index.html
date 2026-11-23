@@ -6,6 +6,22 @@
   <title>GameVault</title>
   <meta name="description" content="GameVault: tu colección de videojuegos, backlog y horas jugadas en un único lugar.">
   <meta name="theme-color" content="#6366F1">
+  <script>
+    /* v1.0.9: elimina de entrada cualquier cache antigua de GameVault para que
+       los clientes de PC, la pestana "Mis Consolas" y las variantes "/ Emulador"
+       no se sirvan de una version previa. */
+    (function () {
+      var CURRENT = 'gamevault-v1.0.9';
+      if (!('caches' in window)) return;
+      try {
+        caches.keys().then(function (keys) {
+          return Promise.all(keys.filter(function (key) {
+            return /^gamevault-/.test(key) && key !== CURRENT;
+          }).map(function (key) { return caches.delete(key); }));
+        }).catch(function () {});
+      } catch (e) {}
+    })();
+  </script>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -41,6 +57,10 @@
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1" fill="currentColor"/><circle cx="15.5" cy="15.5" r="1" fill="currentColor"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg>
         <span data-i18n="btn.random">Elegir al azar</span>
       </button>
+      <button class="btn recommend" id="btn-recommend" type="button">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M12 2.5l1.7 4.6L18.3 9l-4.6 1.7L12 15.3l-1.7-4.6L5.7 9l4.6-1.9L12 2.5z"/><path d="M18.6 14.6l.8 2.1 2.1.8-2.1.8-.8 2.1-.8-2.1-2.1-.8 2.1-.8.8-2.1z"/><path d="M5.4 16.2l.6 1.6 1.6.6-1.6.6-.6 1.6-.6-1.6-1.6-.6 1.6-.6.6-1.6z"/></svg>
+        <span data-i18n="btn.recommend">Recomiéndame un juego</span>
+      </button>
       <button class="btn ghost" id="btn-backup" type="button" data-i18n="btn.backup">Copia de seguridad</button>
       <button class="btn primary" id="btn-add" type="button">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
@@ -49,43 +69,77 @@
     </div>
   </header>
 
+  <nav class="view-tabs" id="view-tabs" aria-label="Vistas principales" data-i18n-aria="view.aria">
+    <button class="view-tab" id="btn-collection" type="button" data-view="collection" aria-pressed="true">
+      <span data-i18n="view.collection">Colección</span>
+    </button>
+    <button class="view-tab" id="btn-owned" type="button" data-view="consoles" aria-pressed="false">
+      <span data-i18n="view.consoles">Mis Consolas</span>
+      <span class="badge" id="owned-badge" aria-hidden="true">0</span>
+    </button>
+  </nav>
+
   <div id="notes"></div>
 
-  <section class="stats" aria-label="Resumen de la colección" data-i18n-aria="stats.aria">
-    <div class="stat"><span class="k" data-i18n="stat.games">Juegos</span><span class="v num" id="st-total">0</span><span class="s" id="st-total-s"></span></div>
-    <div class="stat"><span class="k" data-i18n="stat.hours">Horas jugadas</span><span class="v num" id="st-hours">0</span><span class="s" id="st-hours-s"></span></div>
-    <div class="stat"><span class="k" data-i18n="stat.completed">Completado</span><span class="v num" id="st-pct">0%</span><span class="s" id="st-pct-s"></span></div>
-    <div class="stat"><span class="k" data-i18n="stat.favoritePlatform">Plataforma favorita</span><span class="v" id="st-plat">—</span><span class="s" id="st-plat-s"></span></div>
+  <section class="view" id="view-collection" data-view-panel="collection">
+    <section class="stats" aria-label="Resumen de la colección" data-i18n-aria="stats.aria">
+      <div class="stat"><span class="k" data-i18n="stat.games">Juegos</span><span class="v num" id="st-total">0</span><span class="s" id="st-total-s"></span></div>
+      <div class="stat"><span class="k" data-i18n="stat.hours">Horas jugadas</span><span class="v num" id="st-hours">0</span><span class="s" id="st-hours-s"></span></div>
+      <div class="stat"><span class="k" data-i18n="stat.completed">Completado</span><span class="v num" id="st-pct">0%</span><span class="s" id="st-pct-s"></span></div>
+      <div class="stat"><span class="k" data-i18n="stat.favoritePlatform">Plataforma favorita</span><span class="v" id="st-plat">—</span><span class="s" id="st-plat-s"></span></div>
+    </section>
+
+    <section class="insight">
+      <div class="panel">
+        <h2 data-i18n="panel.collection">Estado de la colección</h2>
+        <div class="stack" id="stack"></div>
+        <div class="legend" id="legend"></div>
+      </div>
+      <div class="panel">
+        <h2 data-i18n="panel.platforms">Por plataforma</h2>
+        <div class="bars" id="bars"></div>
+      </div>
+    </section>
+
+    <nav class="tabs" id="tabs" aria-label="Filtrar por estado" data-i18n-aria="tabs.aria"></nav>
+
+    <div class="toolbar">
+      <input class="field search" id="q" type="search" data-i18n-placeholder="search.placeholder" placeholder="Buscar por título  ( / )" autocomplete="off">
+      <select class="field" id="f-plat" data-i18n-aria="filter.platformAria" aria-label="Plataforma"></select>
+      <select class="field" id="f-genre" data-i18n-aria="filter.genreAria" aria-label="Género"></select>
+      <select class="field" id="f-sort" data-i18n-aria="sort.aria" aria-label="Ordenar">
+        <option value="reciente" data-i18n="sort.recent">Más recientes</option>
+        <option value="nombre" data-i18n="sort.name">Nombre A–Z</option>
+        <option value="horas" data-i18n="sort.hours">Más horas</option>
+        <option value="nota" data-i18n="sort.score">Mejor nota</option>
+        <option value="anio" data-i18n="sort.year">Año de lanzamiento</option>
+      </select>
+      <label class="owned-toggle" id="owned-toggle-wrap" for="f-owned" title="">
+        <input type="checkbox" id="f-owned">
+        <span data-i18n="filter.ownedOnly">Solo mis consolas</span>
+      </label>
+    </div>
+
+    <main id="grid" class="grid" aria-live="polite"></main>
   </section>
 
-  <section class="insight">
-    <div class="panel">
-      <h2 data-i18n="panel.collection">Estado de la colección</h2>
-      <div class="stack" id="stack"></div>
-      <div class="legend" id="legend"></div>
+  <section class="view" id="view-consoles" data-view-panel="consoles" hidden>
+    <div class="panel console-selector">
+      <h2 data-i18n="owned.title">Mis consolas</h2>
+      <p class="msg" data-i18n="owned.description">Marca las consolas o dispositivos que tienes. Si no configuras ninguna, se asumen todas disponibles.</p>
+      <div class="console-groups" id="ow-chips" role="group" data-i18n-aria="owned.aria" aria-label="Mis consolas"></div>
+      <p class="msg" id="ow-msg"></p>
+      <div class="foot">
+        <button class="btn ghost" id="ow-all" type="button" data-i18n="owned.all">Todas</button>
+      </div>
     </div>
-    <div class="panel">
-      <h2 data-i18n="panel.platforms">Por plataforma</h2>
-      <div class="bars" id="bars"></div>
-    </div>
+
+    <section class="panel console-games">
+      <h2 data-i18n="console.gamesTitle">Juegos por consola</h2>
+      <p class="msg" data-i18n="console.description">Tu biblioteca agrupada por máquina o sistema.</p>
+      <div id="console-game-groups" class="console-game-groups" aria-live="polite"></div>
+    </section>
   </section>
-
-  <nav class="tabs" id="tabs" aria-label="Filtrar por estado" data-i18n-aria="tabs.aria"></nav>
-
-  <div class="toolbar">
-    <input class="field search" id="q" type="search" data-i18n-placeholder="search.placeholder" placeholder="Buscar por título  ( / )" autocomplete="off">
-    <select class="field" id="f-plat" data-i18n-aria="filter.platformAria" aria-label="Plataforma"></select>
-    <select class="field" id="f-genre" data-i18n-aria="filter.genreAria" aria-label="Género"></select>
-    <select class="field" id="f-sort" data-i18n-aria="sort.aria" aria-label="Ordenar">
-      <option value="reciente" data-i18n="sort.recent">Más recientes</option>
-      <option value="nombre" data-i18n="sort.name">Nombre A–Z</option>
-      <option value="horas" data-i18n="sort.hours">Más horas</option>
-      <option value="nota" data-i18n="sort.score">Mejor nota</option>
-      <option value="anio" data-i18n="sort.year">Año de lanzamiento</option>
-    </select>
-  </div>
-
-  <main id="grid" class="grid" aria-live="polite"></main>
 </div>
 
 <div class="overlay" id="ov-edit" hidden>
@@ -125,9 +179,10 @@
       <label class="lbl"><span data-i18n="editor.platform">Plataforma</span>
         <input class="input" id="e-plat" type="text" list="dl-plat" autocomplete="off" maxlength="40" data-i18n-placeholder="editor.platformPlaceholder" placeholder="PC, PS5, Switch...">
       </label>
-      <label class="lbl"><span data-i18n="editor.genre">Género</span>
-        <input class="input" id="e-genre" type="text" list="dl-genre" autocomplete="off" maxlength="40" data-i18n-placeholder="editor.genrePlaceholder" placeholder="RPG, Acción...">
-      </label>
+      <div class="lbl full"><span data-i18n="editor.genres">Géneros</span>
+        <div class="genre-chips" id="e-genres" role="group" data-i18n-aria="editor.genresAria" aria-label="Géneros"></div>
+        <span class="help" data-i18n="editor.genresHelp">Selecciona uno o varios géneros.</span>
+      </div>
       <label class="lbl"><span data-i18n="editor.releaseDate">Año / Fecha de lanzamiento</span>
         <input class="input" id="e-release" type="text" autocomplete="off" maxlength="30" data-i18n-placeholder="editor.releasePlaceholder" placeholder="2017 o 2022-02-25">
       </label>
@@ -173,6 +228,20 @@
       <button class="btn ghost" id="r-close" type="button" data-i18n="roulette.close">Cerrar</button>
       <button class="btn" id="r-again" type="button" data-i18n="roulette.again">Otro</button>
       <button class="btn primary" id="r-start" type="button" data-i18n="roulette.start">Empezar a jugar</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="ov-recommend" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="rc-title" hidden>
+    <h3 id="rc-title" data-i18n="recommend.title">Juego recomendado para ti</h3>
+    <p class="msg" id="rc-reason"></p>
+    <div id="rc-body"></div>
+    <p class="help" id="rc-status" role="status" aria-live="polite" hidden></p>
+    <div class="foot">
+      <button class="btn ghost" id="rc-close" type="button" data-i18n="recommend.close">Cerrar</button>
+      <button class="btn" id="rc-again" type="button" data-i18n="recommend.again">Otra recomendación</button>
+      <button class="btn primary" id="rc-add" type="button" data-i18n="recommend.addPending">+ Añadir a Pendientes</button>
     </div>
   </div>
 </div>
