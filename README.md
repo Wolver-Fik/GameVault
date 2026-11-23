@@ -16,7 +16,10 @@ Your game collection, backlog and played hours in one place. GameVault is a free
 
 - **8 languages:** English, Español, Português, Français, Italiano, Deutsch, Русский and 日本語. Automatic detection from `navigator.language`, saved in `localStorage`, switchable from the header.
 - **Collection management:** add, edit and delete games; status (Playing, Pending, Completed, Platinum 100%, Abandoned), platform, genre, hours, score and notes.
-- **Covers:** automatic lookup through Wikipedia, image upload (compressed locally) or direct image URL.
+- **Metadata scraper & covers:** one-click auto-fill via Wikipedia & Wikidata for official cover art, localized synopsis (in your active language), release date, developer studio, and hybrid subgenres (*Survival Horror*, *Action-Adventure*, *Action RPG*, etc.), plus local image upload or custom URL.
+- **Smart game recommender:** suggests new titles outside your library based strictly on your favorite genres and owned hardware, ready to add to your backlog with full metadata.
+- **My Consoles & platform filtering:** manage your owned consoles (including *Nintendo Switch 2*, handhelds, retro systems, per-family emulators, and PC clients like *Steam, Epic, EA App, Battle.net, GOG*), view games grouped by console, and auto-filter compatible platforms when adding games.
+- **Multi-genre tagging:** assign and filter multiple genres or hybrid subgenres per game.
 - **Insights:** collection status, per-platform bars, totals, average rating and favorite platform.
 - **Random picker:** pick a pending game at random, optionally filtered by platform, and start playing with one tap.
 - **Backups:** copy/export JSON or CSV and replace the library from a previously saved backup.
@@ -64,7 +67,10 @@ Tu colección de videojuegos, tu backlog y las horas jugadas en un único lugar.
 
 - **8 idiomas:** English, Español, Português, Français, Italiano, Deutsch, Русский y 日本語. Detección automática desde `navigator.language`, persistencia en `localStorage` y selector en el encabezado.
 - **Gestión de la colección:** añade, edita y elimina juegos con estado (Jugando, Pendiente, Completado, Platino 100%, Abandonado), plataforma, género, horas, nota y notas.
-- **Portadas:** búsqueda automática en Wikipedia, subida de imagen (comprimida localmente) o URL directa.
+- **Scraper de metadatos y portadas:** autocompletado en un clic mediante Wikipedia y Wikidata con carátula oficial, sinopsis localizada en el idioma activo de la app, fecha de lanzamiento, estudio desarrollador y subgéneros híbridos (*Survival Horror*, *Acción y aventura*, *Action RPG*, etc.), además de subida local o URL personalizada.
+- **Recomendador inteligente de juegos:** sugiere títulos nuevos fuera de tu colección basándose exclusivamente en tus géneros favoritos y consolas disponibles, listos para añadir a pendientes con ficha completa.
+- **Mis Consolas y filtro cruzado de plataformas:** configura tus consolas (incluyendo *Nintendo Switch 2*, portátiles, sistemas retro, emuladores por familia y clientes de PC como *Steam, Epic, EA App, Battle.net, GOG*), agrupa tu biblioteca por consola y filtra automáticamente en qué plataformas de las que posees salió cada título.
+- **Múltiples géneros por juego:** asigna y filtra varios géneros o subgéneros híbridos simultáneamente por título.
 - **Estadísticas:** estado de la colección, barras por plataforma, totales, nota media y plataforma favorita.
 - **Ruleta aleatoria:** elige un juego pendiente al azar, con filtro opcional por plataforma, y empieza a jugar con un toque.
 - **Copias de seguridad:** copia/exporta JSON o CSV y reemplaza la biblioteca desde una copia guardada.
