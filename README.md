@@ -2,7 +2,11 @@
 
 [![Live demo / Demo en vivo](https://img.shields.io/badge/GitHub%20Pages-GameVault-6366F1?style=flat-square)](https://wolver-fik.github.io/GameVault/)
 
-**English** · [Español](#español)
+[English](#english) · [Español](#español)
+
+---
+
+## English
 
 Your game collection, backlog and played hours in one place. GameVault is a free, offline-friendly Progressive Web App: no account, no server, your data stays in your browser.
 
