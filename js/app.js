@@ -2,8 +2,8 @@
 (function () {
   var STORAGE = window.GVStorage;
   var I = window.GVI18N;
-  var CACHE_NAME = 'gamevault-v1.1.8';
-  var RELOAD_FLAG = 'gv-cache-reload-v1.1.8';
+  var CACHE_NAME = 'gamevault-v1.1.9';
+  var RELOAD_FLAG = 'gv-cache-reload-v1.1.9';
 
   function t(key, vars) {
     if (!I || typeof I.t !== 'function') return String(key);
@@ -79,6 +79,29 @@
     return k === 'pcSteam' ||
       (PC_RUNTIME_KEYS.indexOf(k) === -1 && EMULATOR_PLATFORM_KEYS.indexOf(k) === -1);
   });
+  /* Consolas con lanzamiento emulable real. Windows/PC NO acredita un emulador:
+     las variantes "/ Emulador" solo se habilitan si el juego salió en una de
+     estas máquinas. Es la regla estricta compartida por editor y recomendador. */
+  var EMULATABLE_RELEASE_KEYS = ['ps3', 'ps2', 'ps1', 'psp', 'switch', 'wiiU', 'wii',
+    'gamecube', 'n64', 'snes', 'nes', 'n3ds', 'nds', 'gba'];
+  var EMULATOR_BASE_KEYS = {
+    pcEmulator: '', ps4Emulator: 'ps4', ps3Emulator: 'ps3', switchEmulator: 'switch',
+    emulator: '', retro: '', retroEmulator: ''
+  };
+  function hasEmulatableRelease(keys) {
+    return (keys || []).some(function (k) { return EMULATABLE_RELEASE_KEYS.indexOf(k) !== -1; });
+  }
+  function emulatorKeyAllowed(key, releaseKeys) {
+    if (!Object.prototype.hasOwnProperty.call(EMULATOR_BASE_KEYS, key)) return true;
+    var base = EMULATOR_BASE_KEYS[key];
+    /* "/ Emulador" de consola exige ESA consola emulable en el juego; los
+       genéricos (PC/Retro) exigen al menos una consola emulable real. */
+    if (base) {
+      return EMULATABLE_RELEASE_KEYS.indexOf(base) !== -1 &&
+        (releaseKeys || []).indexOf(base) !== -1;
+    }
+    return hasEmulatableRelease(releaseKeys);
+  }
   var VIEW_KEY = (STORAGE && STORAGE.VIEW_KEY) ? STORAGE.VIEW_KEY : 'gamevault-active-view-v1';
   /* Catálogo único de géneros definido en storage.js (v1.1.1), con fallback por si
      storage.js no se cargara; la fuente de verdad es GVStorage.GENRE_KEYS. */
@@ -358,12 +381,13 @@
   }
 
   /* ---------- Mis consolas / dispositivos disponibles ---------- */
-  var RETRO_OWNED_KEYS = ['retroEmulator', 'ps2', 'ps1', 'psp', 'n64', 'snes', 'nes',
-    'gba', 'gameboy', 'genesis', 'dreamcast', 'gamecube', 'wii'];
+  /* Retro equivale a las consolas emulables reales: ni PC/Windows ni PS4/PS5
+     añaden derecho a "Retro / Emulador" por sí solos. */
+  var RETRO_OWNED_KEYS = EMULATABLE_RELEASE_KEYS.concat(['retroEmulator']);
   /* Que hardware sirve para cada plataforma de juego (retrocompatibilidad incluida).
      Las variantes "/ Emulador" cuentan como maquina valida para su consola base. */
   var PLATFORM_TO_OWNED = {
-    steamDeck: ['steamDeck', 'pcSteam', 'pcEmulator'],
+    steamDeck: ['steamDeck', 'pcSteam'],
     mobile: ['mobile'],
     ps5: ['ps5'],
     ps4: ['ps4', 'ps4Emulator'],
@@ -392,8 +416,8 @@
     xbox360: ['xbox360'],
     genesis: ['genesis', 'retroEmulator'],
     dreamcast: ['dreamcast', 'retroEmulator'],
-    emulator: ['retroEmulator', 'pcEmulator', 'ps4Emulator', 'ps3Emulator', 'switchEmulator',
-      'ps2', 'ps1', 'psp', 'n64', 'snes', 'nes', 'gba', 'gameboy', 'genesis', 'dreamcast'],
+    emulator: ['retroEmulator', 'pcEmulator', 'ps4Emulator', 'ps3Emulator', 'switchEmulator']
+      .concat(EMULATABLE_RELEASE_KEYS),
     retro: RETRO_OWNED_KEYS,
     xbox: ['xboxSeries']
   };
@@ -413,9 +437,11 @@
     switchEmulator: ['switch', 'switch2'],
     switch2: ['switch']
   };
-  /* Consolas base que un emulador marcado puede ejecutar sin estar marcadas
-     fisicamente. El resto de extras (emulator/retro) exige estar en Mis Consolas. */
-  var EMULATOR_BASE_EXTRAS = ['ps4', 'ps3', 'switch', 'switch2'];
+  /* Consolas base emulables que un emulador marcado puede ejecutar sin estar
+     marcadas físicamente. PS4 y Switch 2 quedan fuera de la lista estricta. */
+  var EMULATOR_BASE_EXTRAS = EMULATABLE_RELEASE_KEYS.filter(function (k) {
+    return k === 'ps3' || k === 'switch';
+  });
   function addPlatformOption(list, key) {
     if (!key || PLATFORM_KEYS.indexOf(key) === -1 || list.indexOf(key) !== -1) return;
     list.push(key);
@@ -443,10 +469,10 @@
     }
     (candidates || []).forEach(function (key) {
       var capable = PLATFORM_TO_OWNED[key] || [key];
-      /* Un lanzamiento generico en PC solo habilita los clientes abiertos (y
+      /* Un lanzamiento genérico en PC solo habilita los clientes abiertos (y
          Steam Deck), nunca EA/Battle.net/Ubisoft/Xbox/Riot marcados por el
-         usuario: esos no acreditan que el juego saliera en esa tienda. */
-      if (key === 'pcSteam') capable = PC_OPEN_LAUNCHER_KEYS.concat(['pcEmulator', 'steamDeck']);
+         usuario ni "PC / Emulador": Windows no acredita un emulador. */
+      if (key === 'pcSteam') capable = PC_OPEN_LAUNCHER_KEYS.concat(['steamDeck']);
       /* Un launcher detectado explicitamente solo habilita ese cliente (y Steam
          Deck, que ejecuta el mismo catalogo), nunca todos los marcados. */
       else if (PC_LAUNCHER_KEYS.indexOf(key) !== -1) capable = [key, 'steamDeck'];
@@ -456,15 +482,19 @@
          plataforma detectada tal cual colaría "PS4 / Emulador" o todos los
          launchers de PC cuando el usuario no los tiene marcados. */
       hits.forEach(function (k) {
+        /* Ninguna variante "/ Emulador" sin una consola emulable real detrás. */
+        if (!emulatorKeyAllowed(k, candidates)) return;
         add(k);
         /* Solo equivalentes marcados por el usuario o la consola base de un
-           emulador que si posee: nunca "Emulator"/"Retro" genericos. */
+           emulador que sí posee: nunca "Emulator"/"Retro" genéricos. */
         (OWNED_TO_PLATFORM_EXTRA[k] || []).forEach(function (extra) {
-          if (owned.indexOf(extra) !== -1 || EMULATOR_BASE_EXTRAS.indexOf(extra) !== -1) add(extra);
+          if ((owned.indexOf(extra) !== -1 || EMULATOR_BASE_EXTRAS.indexOf(extra) !== -1) &&
+              emulatorKeyAllowed(extra, candidates)) add(extra);
         });
       });
       /* Un emulador retro también habilita la consola física del juego. */
-      if (hits.indexOf('retroEmulator') !== -1 && RETRO_OWNED_KEYS.indexOf(key) !== -1) add(key);
+      if (hits.indexOf('retroEmulator') !== -1 && RETRO_OWNED_KEYS.indexOf(key) !== -1 &&
+          emulatorKeyAllowed(key, candidates)) add(key);
     });
     return out;
   }
@@ -1244,9 +1274,17 @@
     { key: 'pcXboxApp', re: /\bmicrosoft store\b|\bmicrosoft games store\b|\bxbox game pass\b|\bpc game pass\b|\bgame pass\b|\bxbox app\b|\bxbox game studios\b|\bmicrosoft studios\b/i },
     { key: 'pcRiot', re: /\briot games\b|\briot client\b/i }
   ];
-  var EMULABLE_PLATFORM_KEYS = ['ps3', 'ps2', 'ps1', 'psp', 'switch', 'wiiU', 'wii',
-    'gamecube', 'n64', 'snes', 'n3ds', 'nds', 'gba', 'ps3Emulator', 'switchEmulator',
-    'retroEmulator', 'emulator', 'retro'];
+  /* Móvil solo con confirmación explícita: Q48493 = iOS, Q94 = Android, o el
+     campo "platform" del Infobox/P400 diciendo exactamente iOS/Android. Un
+     "mobile" genérico o una tienda PC nunca habilita esta plataforma. */
+  var MOBILE_PLATFORM_QIDS = ['Q48493', 'Q94'];
+  function mobileExplicitlyConfirmed(qids, releaseText) {
+    var i;
+    for (i = 0; i < (qids || []).length; i++) {
+      if (MOBILE_PLATFORM_QIDS.indexOf(qids[i]) !== -1) return true;
+    }
+    return /\b(?:ios|iphone\s+os|ipad\s+os|android)\b/i.test((releaseText || []).join(' '));
+  }
   function pcLaunchersFromEvidence(sources) {
     var text = ' ' + String((sources || []).join(' · ')).replace(/[|]/g, ' ') + ' ';
     var out = [];
@@ -1277,6 +1315,11 @@
     platformKeysFromText(releaseText, RELEASE_PLATFORM_KEYS).forEach(function (k) {
       if (keys.indexOf(k) === -1) keys.push(k);
     });
+    /* Regla estricta de móvil: sin iOS/Android confirmados, se descarta aunque
+       el texto dijera solo "mobile" o el usuario tenga móvil en Mis Consolas. */
+    if (!mobileExplicitlyConfirmed(qids, releaseText)) {
+      keys = keys.filter(function (k) { return k !== 'mobile'; });
+    }
     if (!hasPcPlatformSignal(result)) {
       keys = keys.filter(function (k) { return PC_RUNTIME_KEYS.indexOf(k) === -1; });
       return keys;
@@ -1296,22 +1339,20 @@
     if (!pcPlaced) pcKeys.forEach(add);
     return ordered;
   }
-  /* Nivel 1: Mis Consolas INTERSECCION plataformas reales del juego. */
+  /* Nivel 1: Mis Consolas INTERSECCION plataformas reales del juego. La misma
+     función la usa el editor y ahora también la tarjeta de recomendaciones. */
   function detectGamePlatforms(result, owned, realKeys) {
     var real = realKeys || detectRealGamePlatforms(result);
     if (owned.length) {
       var matched = platformKeysMatchingOwned(real, owned);
-      /* PC / Emulador solo si el usuario lo marco y el juego tiene version
-         emulable (consola retro soportada o PC). */
-      if (owned.indexOf('pcEmulator') !== -1 &&
-          (real.indexOf('pcSteam') !== -1 ||
-           real.some(function (k) { return EMULABLE_PLATFORM_KEYS.indexOf(k) !== -1; }))) {
+      /* PC / Emulador exige una consola emulable real; Windows/PC NO basta. */
+      if (owned.indexOf('pcEmulator') !== -1 && hasEmulatableRelease(real)) {
         addPlatformOption(matched, 'pcEmulator');
       }
-      return matched;
+      return matched.filter(function (k) { return emulatorKeyAllowed(k, real); });
     }
-    /* Sin consolas configuradas se asuman todas: el nivel 1 ya son todas las
-       plataformas reales, sin variantes de emulador ni launchers de mas. */
+    /* Sin consolas configuradas (demo inicial) se muestran directamente las
+       plataformas oficiales reales, sin launchers, móvil ni emuladores inventados. */
     return real.slice();
   }
 
@@ -2134,7 +2175,7 @@
     pcSteam: ['Q1406', 'Q1074923'],
     pcEmulator: ['Q1406', 'Q1074923'],
     steamDeck: ['Q107542665'],
-    mobile: ['Q48493', 'Q94'],
+    mobile: MOBILE_PLATFORM_QIDS.slice(),
     ps5: ['Q63184502'],
     ps4: ['Q5014725'],
     ps4Emulator: ['Q5014725'],
@@ -2192,28 +2233,26 @@
     if (platforms) return t('recommend.reasonOwned', { genres: genres, platforms: platforms });
     return t('recommend.reason', { genres: genres });
   }
+  /* Misma intersección precisa que el editor: plataformas reales del juego
+     (P400/P750 + Infobox, con móvil y emuladores confirmados) ∩ Mis Consolas.
+     Sin consolas configuradas, detectGamePlatforms devuelve las plataformas
+     oficiales del juego, que es lo que debe verse en la tarjeta. */
   function compatibleOwnedPlatforms(result) {
-    var qids = result && result.platformQids ? result.platformQids : [];
-    var wanted = recommendPlatforms.length ? recommendPlatforms : OWNED_PLATFORM_KEYS.slice();
-    var out = [];
-    wanted.forEach(function (k) {
-      var allowed = WIKIDATA_PLATFORM_QIDS[k] || [];
-      for (var i = 0; i < qids.length; i++) {
-        if (allowed.indexOf(qids[i]) !== -1) { out.push(k); return; }
-      }
-    });
-    return out;
+    var real = detectRealGamePlatforms(result || {});
+    var owned = ownedConfigured() ? effectiveOwnedKeys() : [];
+    return detectGamePlatforms(result || {}, owned, real);
   }
   function recommendPlatformCompatible(result) {
     if (!recommendPlatforms.length) return true;
-    var qids = result && result.platformQids ? result.platformQids : [];
-    if (!qids.length) return true; /* sin datos P400, no descartamos por falta de señal */
-    return compatibleOwnedPlatforms(result).length > 0;
+    var real = detectRealGamePlatforms(result || {});
+    if (!real.length) return true; /* sin señal de plataforma, no descartamos */
+    return detectGamePlatforms(result || {}, recommendPlatforms, real).length > 0;
   }
   function recommendPlatformLabel(rec) {
+    /* Nunca se rellena con recommendPlatforms: eso volvería a inventar
+       launchers, móvil o emuladores que el juego no tiene. */
     var keys = rec && rec.compatiblePlatforms ? rec.compatiblePlatforms : [];
     if (keys.length) return keys.map(function (k) { return displayValue('o', k); }).join(' / ');
-    if (recommendPlatforms.length) return recommendPlatforms.map(function (k) { return displayValue('o', k); }).join(' / ');
     return t('recommend.anyPlatform');
   }
   function inCollection(title) {
@@ -2427,8 +2466,8 @@
     setOverlay('ov-recommend', false);
   }
   function recommendPlatformForGame(rec) {
+    /* Solo se guarda una plataforma si el cruce estricto la confirmó. */
     var keys = rec && rec.compatiblePlatforms ? rec.compatiblePlatforms : [];
-    if (!keys.length) keys = recommendPlatforms.length ? recommendPlatforms : [];
     if (!keys.length) return '';
     var k = keys[0];
     /* pcSteam conserva el alias historico; los demas launchers guardan su clave. */
@@ -2725,7 +2764,7 @@
     navigator.serviceWorker.addEventListener('controllerchange', reloadClean);
     purgeOldCaches().then(function (purged) {
       /* La query fuerza al navegador a descargar el SW nuevo sin usar su HTTP cache. */
-      return navigator.serviceWorker.register('./sw.js?v=1.1.8', { scope: './' })
+      return navigator.serviceWorker.register('./sw.js?v=1.1.9', { scope: './' })
         .then(function (registration) {
           if (purged) setTimeout(reloadClean, 200);
           return registration.update();

@@ -1,6 +1,6 @@
 /* GameVault service worker: Network-First for HTML, Cache-First for assets. */
-/* v1.1.8: selector de plataformas en dos niveles (Mis Consolas ∩ disponibilidad real / todas las plataformas del juego), sin launchers cerrados ajenos al juego y purga de las caches antiguas. */
-var CACHE = 'gamevault-v1.1.8';
+/* v1.1.9: el modal de recomendaciones usa el mismo cruce preciso que el editor (plataformas reales ∩ Mis Consolas), sin launchers, móvil ni emuladores inventados; purga de las caches antiguas. */
+var CACHE = 'gamevault-v1.1.9';
 var ROOT = new URL('./', self.registration.scope).href;
 var PRECACHE = [
   './',
