@@ -2,8 +2,8 @@
 (function () {
   var STORAGE = window.GVStorage;
   var I = window.GVI18N;
-  var CACHE_NAME = 'gamevault-v1.2.3';
-  var RELOAD_FLAG = 'gv-cache-reload-v1.2.3';
+  var CACHE_NAME = 'gamevault-v1.2.5';
+  var RELOAD_FLAG = 'gv-cache-reload-v1.2.5';
 
   function t(key, vars) {
     if (!I || typeof I.t !== 'function') return String(key);
@@ -866,6 +866,176 @@
     reader.readAsDataURL(file);
   }
 
+  /* ---------- expansor inteligente de siglas y abreviaturas ---------- */
+  /* Todas las reglas se evalúan sobre una clave normalizada: minúsculas, sin
+     acentos ni puntuación y con espacios opcionales entre letras y números. Así
+     "cod bo3", "cod bo 3" y "bo3" llegan al mismo título oficial. Una regla solo
+     se aplica si consume TODA la entrada, para no reescribir títulos reales. */
+  function abbrKey(value) {
+    return String(value == null ? '' : value)
+      .toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[\u2010-\u2015]/g, '-')
+      .replace(/[’']/g, '')
+      .replace(/[.,:]/g, ' ')
+      .replace(/[-/]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+  var TITLE_ABBREVIATIONS = [
+    /* Grand Theft Auto */
+    { re: /^gta\s*lcs$/, title: 'Grand Theft Auto: Liberty City Stories' },
+    { re: /^gta\s*vcs$/, title: 'Grand Theft Auto: Vice City Stories' },
+    { re: /^gta\s*vc$/, title: 'Grand Theft Auto: Vice City' },
+    { re: /^gta\s*sa$/, title: 'Grand Theft Auto: San Andreas' },
+    { re: /^gta\s*(?:3|iii)(?:\s*(?:3|iii))?$/, title: 'Grand Theft Auto III' },
+    { re: /^gta\s*(?:4|iv)$/, title: 'Grand Theft Auto IV' },
+    { re: /^gta\s*(?:5|v)$/, title: 'Grand Theft Auto V' },
+    { re: /^gta\s*(?:1|i)$/, title: 'Grand Theft Auto' },
+    { re: /^gta\s*2$/, title: 'Grand Theft Auto 2' },
+    { re: /^gta$/, title: 'Grand Theft Auto' },
+
+    /* Call of Duty (con y sin el prefijo "cod") */
+    { re: /^cod\s*bo\s*(?:bocw|cw|cold\s*war|5)$/, title: 'Call of Duty: Black Ops Cold War' },
+    { re: /^cod\s*bo\s*6$/, title: 'Call of Duty: Black Ops 6' },
+    { re: /^cod\s*bo\s*(?:4|iv)$/, title: 'Call of Duty: Black Ops 4' },
+    { re: /^cod\s*bo\s*(?:3|iii)$/, title: 'Call of Duty: Black Ops III' },
+    { re: /^cod\s*bo\s*(?:2|ii)$/, title: 'Call of Duty: Black Ops II' },
+    { re: /^cod\s*bo\s*(?:1|i)?$/, title: 'Call of Duty: Black Ops' },
+    { re: /^cod\s*mw\s*(?:3|iii)$/, title: 'Call of Duty: Modern Warfare 3' },
+    { re: /^cod\s*mw\s*(?:2|ii)$/, title: 'Call of Duty: Modern Warfare 2' },
+    { re: /^cod\s*mw\s*(?:1|i)?$/, title: 'Call of Duty: Modern Warfare' },
+    { re: /^cod\s*waw$/, title: 'Call of Duty: World at War' },
+    { re: /^cod\s*aw$/, title: 'Call of Duty: Advanced Warfare' },
+    { re: /^cod\s*iw$/, title: 'Call of Duty: Infinite Warfare' },
+    { re: /^cod$/, title: 'Call of Duty' },
+    { re: /^bo\s*(?:bocw|cw|cold\s*war|5)$/, title: 'Call of Duty: Black Ops Cold War' },
+    { re: /^bo\s*6$/, title: 'Call of Duty: Black Ops 6' },
+    { re: /^bo\s*(?:4|iv)$/, title: 'Call of Duty: Black Ops 4' },
+    { re: /^bo\s*(?:3|iii)$/, title: 'Call of Duty: Black Ops III' },
+    { re: /^bo\s*(?:2|ii)$/, title: 'Call of Duty: Black Ops II' },
+    { re: /^bo\s*(?:1|i)?$/, title: 'Call of Duty: Black Ops' },
+    { re: /^mw\s*(?:3|iii)$/, title: 'Call of Duty: Modern Warfare 3' },
+    { re: /^mw\s*(?:2|ii)$/, title: 'Call of Duty: Modern Warfare 2' },
+    { re: /^mw\s*(?:1|i)?$/, title: 'Call of Duty: Modern Warfare' },
+
+    /* Resident Evil */
+    { re: /^re\s*cv$/, title: 'Resident Evil – Code: Veronica' },
+    { re: /^re\s*0$/, title: 'Resident Evil Zero' },
+    { re: /^re\s*8$/, title: 'Resident Evil Village' },
+    { re: /^re\s*7$/, title: 'Resident Evil 7: Biohazard' },
+    { re: /^re\s*(?:1|i)$/, title: 'Resident Evil' },
+    { re: /^re\s*([2-6])$/, title: function (m) { return 'Resident Evil ' + m[1]; } },
+    { re: /^re$/, title: 'Resident Evil' },
+
+    /* Red Dead / Rockstar */
+    { re: /^rdr\s*2$/, title: 'Red Dead Redemption 2' },
+    { re: /^rdr\s*1?$/, title: 'Red Dead Redemption' },
+
+    /* PlayStation / acción / RPG */
+    { re: /^gow$/, title: 'God of War' },
+    { re: /^tlou\s*2$/, title: 'The Last of Us Part II' },
+    { re: /^tlou$/, title: 'The Last of Us' },
+    { re: /^mgs(?:\s*([1-5]))?$/, title: function (m) { return 'Metal Gear Solid' + (m[1] ? ' ' + m[1] : ''); } },
+    { re: /^dmc(?:\s*([1-5]))?$/, title: function (m) { return 'Devil May Cry' + (m[1] ? ' ' + m[1] : ''); } },
+    { re: /^sh(?:\s*([1-4]))?$/, title: function (m) { return 'Silent Hill' + (m[1] ? ' ' + m[1] : ''); } },
+    { re: /^ds(?:\s*([1-3]))?$/, title: function (m) { return (m[1] && m[1] !== '1') ? 'Dark Souls ' + m[1] : 'Dark Souls'; } },
+    { re: /^bb$/, title: 'Bloodborne' },
+    { re: /^er$/, title: 'Elden Ring' },
+    { re: /^tw\s*3$/, title: 'The Witcher 3: Wild Hunt' },
+    { re: /^cp\s*2077$/, title: 'Cyberpunk 2077' },
+    { re: /^bg\s*3$/, title: "Baldur's Gate 3" },
+    { re: /^kh(?:\s*([1-3]))?$/, title: function (m) { return 'Kingdom Hearts' + (m[1] ? ' ' + m[1] : ''); } },
+    { re: /^ff(?:\s*(\d{1,2}))?$/, title: function (m) { return 'Final Fantasy' + (m[1] ? ' ' + m[1] : ''); } },
+    { re: /^ac$/, title: "Assassin's Creed" },
+
+    /* Nintendo / deportes / carreras / shooters */
+    { re: /^botw$/, title: 'The Legend of Zelda: Breath of the Wild' },
+    { re: /^totk$/, title: 'The Legend of Zelda: Tears of the Kingdom' },
+    { re: /^sm\s*64$/, title: 'Super Mario 64' },
+    { re: /^smw$/, title: 'Super Mario World' },
+    { re: /^smb(?:\s*([23]))?$/, title: function (m) { return 'Super Mario Bros.' + (m[1] ? ' ' + m[1] : ''); } },
+    { re: /^nfs\s*mw$/, title: 'Need for Speed: Most Wanted' },
+    { re: /^nfs\s*u\s*2$/, title: 'Need for Speed: Underground 2' },
+    { re: /^nfs(?:\s*(\d{1,2}))?$/, title: function (m) { return 'Need for Speed' + (m[1] ? ' ' + m[1] : ''); } },
+    { re: /^cs\s*go$/, title: 'Counter-Strike: Global Offensive' },
+    { re: /^cs\s*2$/, title: 'Counter-Strike 2' },
+    { re: /^mk\s*11$/, title: 'Mortal Kombat 11' },
+    { re: /^mk\s*1$/, title: 'Mortal Kombat 1' },
+    { re: /^mk(?:\s*(\d{1,2}))?$/, title: function (m) { return 'Mortal Kombat' + (m[1] ? ' ' + m[1] : ''); } },
+    { re: /^pes$/, title: 'Pro Evolution Soccer' },
+    { re: /^ea\s*fc(?:\s*(\d{2}))?$/, title: function (m) { return 'EA Sports FC' + (m[1] ? ' ' + m[1] : ''); } }
+  ];
+  function expandGameTitle(value) {
+    var raw = String(value == null ? '' : value).trim();
+    var key = abbrKey(raw);
+    if (!key) return { title: raw, changed: false, known: false };
+    for (var i = 0; i < TITLE_ABBREVIATIONS.length; i++) {
+      var rule = TITLE_ABBREVIATIONS[i];
+      var m = rule.re.exec(key);
+      if (!m || m[0] !== key) continue;
+      var expanded = typeof rule.title === 'function' ? rule.title(m) : rule.title;
+      return { title: expanded, changed: expanded !== raw, known: true };
+    }
+    return { title: raw, changed: false, known: false };
+  }
+
+  /* Entradas cortas o con pinta de sigla que el diccionario no conoce (LoL,
+     WoW, Dota 2...) se resuelven con OpenSearch antes de pedir la ficha. */
+  function looksLikeShortOrAcronym(value) {
+    var raw = String(value == null ? '' : value).trim();
+    if (!raw) return false;
+    if (raw.length <= 12) return true;
+    var words = raw.split(/\s+/);
+    if (words.length <= 2 && /^[A-Za-zÀ-ÿ]{2,6}\s*\d{0,3}$/.test(raw)) return true;
+    var letters = raw.replace(/[^A-Za-zÀ-ÿ]/g, '');
+    return words.length === 1 && letters.length <= 5;
+  }
+  function wikiOpenSearchUrl(lang, search) {
+    return wikiApi(lang) +
+      '?action=opensearch' +
+      '&search=' + encodeQ(search) +
+      '&limit=3' +
+      '&format=json' +
+      '&origin=*';
+  }
+  function resolveOpenSearchTitle(search, lang) {
+    return fetchMetaJson(wikiOpenSearchUrl(lang || 'en', search)).then(function (data) {
+      if (!Array.isArray(data) || !Array.isArray(data[1]) || !data[1].length) return '';
+      var descriptions = Array.isArray(data[2]) ? data[2] : [];
+      var candidates = [];
+      data[1].forEach(function (raw, i) {
+        var title = cleanWikipediaTitle(raw);
+        if (!title || /disambiguation|desambiguaci[oó]n/i.test(String(raw || '')) || isGenericWikiTitle(title)) return;
+        candidates.push({ title: title, description: String(descriptions[i] || '') });
+      });
+      if (!candidates.length) return '';
+      /* OpenSearch coloca la redirección oficial primero y el término literal
+         ("Lol") después: gana la descripción de videojuego y, si no hay, el
+         primer resultado, NO la coincidencia exacta con la sigla escrita. */
+      var game = candidates.filter(function (c) { return /\bvideo\s*games?\b|\bvideojuegos?\b/i.test(c.description); })[0];
+      var exact = candidates.filter(function (c) { return normTitle(c.title) === normTitle(search); })[0];
+      return (game || candidates[0] || exact).title;
+    }).catch(function () { return ''; });
+  }
+  function resolveScraperTitle(rawTitle, lang) {
+    var expanded = expandGameTitle(rawTitle);
+    if (expanded.changed) {
+      return Promise.resolve({ title: expanded.title, changed: true, source: 'dictionary' });
+    }
+    if (!looksLikeShortOrAcronym(expanded.title)) {
+      return Promise.resolve({ title: expanded.title, changed: false, source: 'raw' });
+    }
+    /* La ficha se extrae de Wikipedia EN/Wikidata: la redirección OpenSearch
+       también se resuelve en EN para que el título devuelto sea consultable. */
+    return resolveOpenSearchTitle(expanded.title, 'en').then(function (official) {
+      if (official && official !== expanded.title) {
+        return { title: official, changed: true, source: 'opensearch' };
+      }
+      return { title: expanded.title, changed: false, source: 'raw' };
+    });
+  }
+
   /* ---------- scraper de metadatos: Wikipedia + Wikidata, sin API key ---------- */
 
   function encodeQ(s) { return encodeURIComponent(String(s || '').trim()).replace(/%20/g, '+'); }
@@ -1638,8 +1808,15 @@
   }
 
   /* Un solo clic = todas las fuentes lanzadas a la vez y un único allSettled.
-     El formulario no se toca hasta que todas han terminado (o han fallado). */
-  function collectMetadata(title, lang, withRemasters) {
+     Antes de lanzar CUALQUIER consulta se resuelve el título: primero el
+     diccionario de siglas y, si no aplica, OpenSearch para entradas cortas. */
+  function collectMetadata(rawTitle, lang, withRemasters) {
+    return resolveScraperTitle(rawTitle, lang).then(function (resolved) {
+      return collectMetadataForTitle(resolved.title, lang, withRemasters, resolved);
+    });
+  }
+  function collectMetadataForTitle(title, lang, withRemasters, resolved) {
+    resolved = resolved || { title: title, changed: false, source: 'raw' };
     var result = { genreSources: [], platformTextSources: [], pcPlatformTextSources: [],
       releasePlatformSources: [], storeEvidenceSources: [], platformQids: [], allPlatformQids: [] };
     var enSearch = fetchMetaJson(wikiMetadataUrl(title)).catch(function () { return null; });
@@ -1767,6 +1944,11 @@
       result.seriesOrCancelled = isSeriesOrCancelledText([
         result.pageTitle, result.pageCategories, result.localTitle, result.descriptionText
       ]) || INTRO_SERIES_CANCELLED_RE.test(result.pageExtract || '');
+      /* El editor usa estos datos para reemplazar el campo Título por el nombre
+         oficial que realmente se consultó en Wikipedia/Wikidata. */
+      result.resolvedTitle = resolved.title;
+      result.titleChanged = resolved.changed;
+      result.titleSource = resolved.source;
       return result;
     });
   }
@@ -1846,10 +2028,15 @@
     setAutofillBusy(true);
     showAutofillMsg(t('editor.autofillSearching', { lang: I.languageName ? I.languageName(lang) : lang }), 'searching');
     $('e-err').textContent = '';
-    /* collectMetadata ya ha esperado a Wikipedia, Wikidata, idioma activo,
-       remasterizaciones y portada. Aplicamos todo de una sola vez. */
+    /* collectMetadata resuelve la sigla (o la redirección OpenSearch) ANTES de
+       consultar y devuelve el título oficial en result.resolvedTitle. */
     collectMetadata(title, lang).then(function (result) {
-      if (result && token === metaSearchId) applyMetadata(result, lang);
+      if (!result || token !== metaSearchId) return;
+      if (result.resolvedTitle && result.resolvedTitle !== title) {
+        $('e-title').value = result.resolvedTitle;
+        renderCoverPreview();
+      }
+      applyMetadata(result, lang);
     }).catch(function () {
       if (token === metaSearchId) showAutofillMsg(t('editor.autofillError'), 'error');
     }).then(function () {
@@ -2235,6 +2422,14 @@
   function saveEditor() {
     var title = $('e-title').value.trim();
     if (!title) { $('e-err').textContent = t('editor.errTitle'); $('e-title').focus(); return; }
+    /* Guardar también expande el diccionario: el campo Título deja de mostrar
+       la sigla aunque el usuario no haya pulsado "Autocompletar ficha". */
+    var expanded = expandGameTitle(title);
+    if (expanded.changed) {
+      title = expanded.title;
+      $('e-title').value = title;
+      renderCoverPreview();
+    }
     var rel = splitRelease($('e-release').value);
     var data = {
       title: title,
@@ -2289,13 +2484,23 @@
     var title = $('e-title').value.trim();
     if (!title) { $('e-err').textContent = t('editor.errTitle'); $('e-title').focus(); return; }
     var mySearch = ++coverSearchId;
+    var lang = I.lang ? I.lang() : I.current();
     coverMsg = t('editor.coverSearching');
     renderCoverPreview();
-    fetchCoverRaw(title).then(function (src) {
-      if (mySearch !== coverSearchId) return;
-      if (src) { editCover = src; editCoverSource = 'wiki'; coverMsg = t('editor.coverFound'); }
-      else coverMsg = t('editor.coverNotFound');
-      renderCoverPreview();
+    /* La búsqueda de portada también pasa por el expansor: nunca se consulta
+       Wikipedia con la sigla cuando el usuario ya escribió una abreviatura. */
+    resolveScraperTitle(title, lang).then(function (resolved) {
+      if (mySearch !== coverSearchId) return null;
+      if (resolved.title !== title) {
+        $('e-title').value = resolved.title;
+        renderCoverPreview();
+      }
+      return fetchCoverRaw(resolved.title).then(function (src) {
+        if (mySearch !== coverSearchId) return;
+        if (src) { editCover = src; editCoverSource = 'wiki'; coverMsg = t('editor.coverFound'); }
+        else coverMsg = t('editor.coverNotFound');
+        renderCoverPreview();
+      });
     }).catch(function () {
       if (mySearch !== coverSearchId) return;
       coverMsg = t('editor.coverError');
@@ -3100,7 +3305,7 @@
     navigator.serviceWorker.addEventListener('controllerchange', reloadClean);
     purgeOldCaches().then(function (purged) {
       /* La query fuerza al navegador a descargar el SW nuevo sin usar su HTTP cache. */
-      return navigator.serviceWorker.register('./sw.js?v=1.2.2', { scope: './' })
+      return navigator.serviceWorker.register('./sw.js?v=1.2.5', { scope: './' })
         .then(function (registration) {
           if (purged) setTimeout(reloadClean, 200);
           return registration.update();
