@@ -10,7 +10,7 @@
     /* elimina de entrada cualquier cache antigua de GameVault para que no se
        sirva una versión previa del selector de plataformas. */
     (function () {
-      var CURRENT = 'gamevault-v1.1.8';
+      var CURRENT = 'gamevault-v1.2.3';
       if (!('caches' in window)) return;
       try {
         caches.keys().then(function (keys) {
@@ -182,6 +182,9 @@
       </div>
       <div class="lbl full"><span data-i18n="editor.genres">Géneros</span>
         <div class="genre-chips" id="e-genres" role="group" data-i18n-aria="editor.genresAria" aria-label="Géneros"></div>
+        <div class="genre-actions">
+          <button class="link-btn" id="e-genres-toggle" type="button" data-i18n="editor.viewAllGenres" aria-expanded="false">Ver todos los géneros</button>
+        </div>
         <span class="help" data-i18n="editor.genresHelp">Selecciona uno o varios géneros.</span>
       </div>
       <label class="lbl"><span data-i18n="editor.releaseDate">Año / Fecha de lanzamiento</span>

@@ -2,8 +2,8 @@
 (function () {
   var STORAGE = window.GVStorage;
   var I = window.GVI18N;
-  var CACHE_NAME = 'gamevault-v1.2.2';
-  var RELOAD_FLAG = 'gv-cache-reload-v1.2.2';
+  var CACHE_NAME = 'gamevault-v1.2.3';
+  var RELOAD_FLAG = 'gv-cache-reload-v1.2.3';
 
   function t(key, vars) {
     if (!I || typeof I.t !== 'function') return String(key);
@@ -144,6 +144,11 @@
   var pickId = null;
   var rollToken = 0;
   var editGenres = [];
+  /* false = vista compacta: solo se pintan los géneros del juego (o ninguno si
+     todavia no se han detectado) y se ofrece el enlace al catálogo completo.
+     El catálogo GENRE_KEYS nunca se recorta: filtros, recomendador y scraper
+     siguen usándolo entero. */
+  var genreExpanded = false;
   /* Selector de plataforma del editor: null = catálogo completo sin filtrar. */
   var platformOptions = null;
   var platformHelpKey = '';
@@ -1724,6 +1729,8 @@
       /* Compacta también lo que ya había en el editor: si llega Survival Horror,
          retira un Supervivencia/Terror seleccionados previamente. */
       editGenres = compactGenres(editGenres.concat(foundGenres));
+      /* El autocompletado devuelve a la vista limpia: solo los generos del juego. */
+      genreExpanded = false;
       renderGenreChips();
       done.push(foundGenres.map(function (k) { return displayValue('g', k); }).join(', '));
     }
@@ -2042,11 +2049,29 @@
   function renderGenreChips() {
     var box = $('e-genres');
     if (!box) return;
-    var keys = sortedGenreKeys(GENRE_KEYS);
+    var all = sortedGenreKeys(GENRE_KEYS);
+    var hasSelected = editGenres.length > 0;
+    /* Con generos ya detectados y vista compacta, solo se pintan los seleccionados;
+       sin scraper ni seleccion, la lista queda colapsada hasta pedirla. */
+    var keys = genreExpanded ? all : (hasSelected
+      ? all.filter(function (k) { return editGenres.indexOf(k) !== -1; })
+      : []);
     box.innerHTML = keys.map(function (k) {
       var on = editGenres.indexOf(k) !== -1;
       return '<button class="genre-chip" type="button" data-genre-toggle="' + k + '" aria-pressed="' + on + '">' + esc(t('genre.' + k)) + '</button>';
     }).join('');
+    var toggle = $('e-genres-toggle');
+    if (toggle) {
+      var labelKey = genreExpanded ? 'editor.collapseGenres'
+        : (hasSelected ? 'editor.editAllGenres' : 'editor.viewAllGenres');
+      toggle.setAttribute('data-i18n', labelKey);
+      toggle.textContent = t(labelKey);
+      toggle.setAttribute('aria-expanded', genreExpanded ? 'true' : 'false');
+    }
+  }
+  function toggleGenresView() {
+    genreExpanded = !genreExpanded;
+    renderGenreChips();
   }
   function setEditGenres(list) {
     editGenres = compactGenres(list);
@@ -2103,6 +2128,8 @@
     $('ed-title').textContent = t(g ? 'editor.editTitle' : 'editor.addTitle');
     $('e-title').value = g ? g.title : '';
     $('e-plat').value = g ? displayValue('p', g.platform) : (state.f.plat ? displayValue('p', state.f.plat) : '');
+    /* Al abrir (alta o edicion) se empieza siempre en vista compacta. */
+    genreExpanded = false;
     setEditGenres(g ? genresOf(g) : (state.f.genre ? [state.f.genre] : []));
     $('e-status').innerHTML = statusOptions();
     $('e-status').value = g ? g.status : (state.f.status !== 'todos' ? state.f.status : 'pendiente');
@@ -2829,6 +2856,7 @@
   on('e-del', 'click', deleteEditorGame);
   on('e-cover-fetch', 'click', searchCover);
   on('e-autofill', 'click', autofillMetadata);
+  on('e-genres-toggle', 'click', toggleGenresView);
   on('e-plat-show-all', 'click', function () {
     if (gamePlatformKeys && gamePlatformKeys.length) {
       /* Nivel 2: todas las plataformas publicadas por el juego, sin catalogo

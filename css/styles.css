@@ -327,6 +327,10 @@ textarea.input { min-height: 72px; resize: vertical; }
 }
 .genre-chip:hover { color: var(--fg); border-color: #34405a; }
 .genre-chip[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+/* Enlace discreto para pasar de la vista compacta al catálogo completo de géneros. */
+.genre-actions { display: flex; align-items: center; min-height: 14px; }
+.genre-actions .link-btn { color: var(--accent); opacity: .85; }
+.genre-actions .link-btn:hover { opacity: 1; }
 .hoursrow { display: flex; gap: 6px; }
 .hoursrow .input { flex: 1; }
 .hoursrow .plus { padding: 0 10px; border-radius: 10px; }
