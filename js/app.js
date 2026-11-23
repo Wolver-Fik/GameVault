@@ -2,8 +2,8 @@
 (function () {
   var STORAGE = window.GVStorage;
   var I = window.GVI18N;
-  var CACHE_NAME = 'gamevault-v1.1.9';
-  var RELOAD_FLAG = 'gv-cache-reload-v1.1.9';
+  var CACHE_NAME = 'gamevault-v1.2.0';
+  var RELOAD_FLAG = 'gv-cache-reload-v1.2.0';
 
   function t(key, vars) {
     if (!I || typeof I.t !== 'function') return String(key);
@@ -2226,10 +2226,22 @@
       return weights[b] - weights[a] || GENRE_KEYS.indexOf(a) - GENRE_KEYS.indexOf(b);
     }).slice(0, 3);
   }
+  /* Subtitulo del modal: solo los generos compartidos entre las preferencias y
+     el juego recomendado, y las plataformas detectadas para ESE juego (las
+     mismas de "PLATAFORMA RECOMENDADA"). Nunca imprime todas las consolas
+     marcadas en "Mis Consolas" (recommendPlatforms). */
   function recommendReason() {
     if (!recommendGenres.length) return t('recommend.reasonEmpty');
-    var genres = recommendGenres.map(function (k) { return displayValue('g', k); }).join(', ');
-    var platforms = recommendPlatforms.map(function (k) { return displayValue('o', k); }).join(', ');
+    var rec = recommendCurrent;
+    var recGenres = genresOf(rec);
+    var matched = rec
+      ? recommendGenres.filter(function (k) { return recGenres.indexOf(k) !== -1; })
+      : recommendGenres.slice();
+    /* Con recomendacion ya resuelta, no se muestran generos que no coinciden. */
+    if (rec && !matched.length) return '';
+    var genres = matched.map(function (k) { return displayValue('g', k); }).join(', ');
+    var keys = rec && rec.compatiblePlatforms ? rec.compatiblePlatforms : [];
+    var platforms = compatiblePlatformLabel(keys);
     if (platforms) return t('recommend.reasonOwned', { genres: genres, platforms: platforms });
     return t('recommend.reason', { genres: genres });
   }
@@ -2248,11 +2260,15 @@
     if (!real.length) return true; /* sin señal de plataforma, no descartamos */
     return detectGamePlatforms(result || {}, recommendPlatforms, real).length > 0;
   }
+  /* Etiqueta comun para la tarjeta y el subtitulo: mismas claves y separador. */
+  function compatiblePlatformLabel(keys) {
+    return (keys || []).map(function (k) { return displayValue('o', k); }).join(' / ');
+  }
   function recommendPlatformLabel(rec) {
     /* Nunca se rellena con recommendPlatforms: eso volvería a inventar
        launchers, móvil o emuladores que el juego no tiene. */
     var keys = rec && rec.compatiblePlatforms ? rec.compatiblePlatforms : [];
-    if (keys.length) return keys.map(function (k) { return displayValue('o', k); }).join(' / ');
+    if (keys.length) return compatiblePlatformLabel(keys);
     return t('recommend.anyPlatform');
   }
   function inCollection(title) {
@@ -2376,6 +2392,7 @@
     recommendCurrent = rec;
     markSeen(title);
     renderRecommendCard(rec);
+    renderRecommendReason();
     showRecommendStatus('', '');
     setRecommendBusy(false);
     return rec;
@@ -2414,6 +2431,7 @@
     var lang = I.lang ? I.lang() : I.current();
     recommendCurrent = null;
     setRecommendBusy(true);
+    renderRecommendReason();
     showRecommendStatus(t('recommend.searching'), 'searching');
     $('rc-body').innerHTML = '<div class="pick shuffling"><div class="cover" style="' + coverStyle(t('recommend.searching')) + '"><span class="ini">?</span></div>' +
       '<div class="info"><h4>' + esc(t('recommend.searching')) + '</h4></div></div>';
@@ -2764,7 +2782,7 @@
     navigator.serviceWorker.addEventListener('controllerchange', reloadClean);
     purgeOldCaches().then(function (purged) {
       /* La query fuerza al navegador a descargar el SW nuevo sin usar su HTTP cache. */
-      return navigator.serviceWorker.register('./sw.js?v=1.1.9', { scope: './' })
+      return navigator.serviceWorker.register('./sw.js?v=1.2.0', { scope: './' })
         .then(function (registration) {
           if (purged) setTimeout(reloadClean, 200);
           return registration.update();
