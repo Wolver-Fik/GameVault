@@ -1,6 +1,6 @@
 /* GameVault service worker: Network-First for HTML, Cache-First for assets. */
-/* v1.2.5: expansor de siglas de videojuegos y respaldo Wikipedia OpenSearch antes del scraper. */
-var CACHE = 'gamevault-v1.2.5';
+/* v1.2.6: selector de plataforma nativo en el editor, desplegable en móvil. */
+var CACHE = 'gamevault-v1.2.6';
 var ROOT = new URL('./', self.registration.scope).href;
 var PRECACHE = [
   './',

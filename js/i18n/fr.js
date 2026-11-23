@@ -131,6 +131,8 @@
     'editor.score': 'Ma note',
     'editor.notes': 'Notes',
     'editor.platformPlaceholder': 'Sélectionne une plateforme...',
+    'editor.platformManual': 'Saisir une autre manuellement...',
+    'editor.platformManualPlaceholder': 'Écris une plateforme...',
     'editor.genrePlaceholder': 'RPG, Action...',
     'editor.coverFetch': 'Chercher une jaquette',
     'editor.coverUpload': 'Importer une image',

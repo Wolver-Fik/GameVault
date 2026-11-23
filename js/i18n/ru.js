@@ -131,6 +131,8 @@
     'editor.score': 'Моя оценка',
     'editor.notes': 'Заметки',
     'editor.platformPlaceholder': 'Выберите платформу...',
+    'editor.platformManual': 'Ввести другую вручную...',
+    'editor.platformManualPlaceholder': 'Введите платформу...',
     'editor.genrePlaceholder': 'RPG, Экшен...',
     'editor.coverFetch': 'Найти обложку',
     'editor.coverUpload': 'Загрузить изображение',

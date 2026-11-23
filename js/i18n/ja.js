@@ -131,6 +131,8 @@
     'editor.score': '自分の評価',
     'editor.notes': 'メモ',
     'editor.platformPlaceholder': 'プラットフォームを選択...',
+    'editor.platformManual': '別のプラットフォームを手入力...',
+    'editor.platformManualPlaceholder': 'プラットフォームを入力...',
     'editor.genrePlaceholder': 'RPG、アクション...',
     'editor.coverFetch': 'カバーを検索',
     'editor.coverUpload': '画像をアップロード',

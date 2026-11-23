@@ -131,6 +131,8 @@
     'editor.score': 'My rating',
     'editor.notes': 'Notes',
     'editor.platformPlaceholder': 'Select a platform...',
+    'editor.platformManual': 'Enter one manually...',
+    'editor.platformManualPlaceholder': 'Type a platform...',
     'editor.genrePlaceholder': 'RPG, Action...',
     'editor.coverFetch': 'Search cover',
     'editor.coverUpload': 'Upload image',

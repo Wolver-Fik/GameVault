@@ -131,6 +131,8 @@
     'editor.score': 'Il mio voto',
     'editor.notes': 'Note',
     'editor.platformPlaceholder': 'Seleziona una piattaforma...',
+    'editor.platformManual': 'Inseriscine un altro manualmente...',
+    'editor.platformManualPlaceholder': 'Scrivi una piattaforma...',
     'editor.genrePlaceholder': 'RPG, Azione...',
     'editor.coverFetch': 'Cerca copertina',
     'editor.coverUpload': 'Carica immagine',

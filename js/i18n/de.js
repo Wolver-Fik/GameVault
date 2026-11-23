@@ -131,6 +131,8 @@
     'editor.score': 'Meine Wertung',
     'editor.notes': 'Notizen',
     'editor.platformPlaceholder': 'Plattform auswählen...',
+    'editor.platformManual': 'Andere manuell eingeben...',
+    'editor.platformManualPlaceholder': 'Plattform eingeben...',
     'editor.genrePlaceholder': 'RPG, Action...',
     'editor.coverFetch': 'Cover suchen',
     'editor.coverUpload': 'Bild hochladen',

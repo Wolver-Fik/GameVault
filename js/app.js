@@ -2,8 +2,8 @@
 (function () {
   var STORAGE = window.GVStorage;
   var I = window.GVI18N;
-  var CACHE_NAME = 'gamevault-v1.2.5';
-  var RELOAD_FLAG = 'gv-cache-reload-v1.2.5';
+  var CACHE_NAME = 'gamevault-v1.2.6';
+  var RELOAD_FLAG = 'gv-cache-reload-v1.2.6';
 
   function t(key, vars) {
     if (!I || typeof I.t !== 'function') return String(key);
@@ -149,7 +149,11 @@
      El catálogo GENRE_KEYS nunca se recorta: filtros, recomendador y scraper
      siguen usándolo entero. */
   var genreExpanded = false;
-  /* Selector de plataforma del editor: null = catálogo completo sin filtrar. */
+  /* Selector de plataforma del editor: null = catálogo completo sin filtrar.
+     Es un <select> nativo (no un datalist: iOS Safari no lo despliega) y la
+     opción final __manual__ revela un campo de texto para escribir una
+     plataforma libre. */
+  var PLATFORM_MANUAL = '__manual__';
   var platformOptions = null;
   var platformHelpKey = '';
   var platformShowAll = false;
@@ -2005,7 +2009,7 @@
         var matched = detectGamePlatforms(result, owned, real);
         /* La plataforma ya guardada se anade despues para no perder el valor
            del formulario; los dos niveles quedan disponibles tras el scraper. */
-        var currentKey = keyOf('p', $('e-plat').value.trim());
+        var currentKey = keyOf('p', platformSelectValue());
         if (PLATFORM_KEYS.indexOf(currentKey) !== -1 && matched.indexOf(currentKey) === -1) matched.push(currentKey);
         /* Nivel 1 por defecto: Mis Consolas ∩ plataformas reales del juego. */
         setPlatformOptions(matched, 'editor.platformFiltered', true);
@@ -2176,22 +2180,62 @@
     if (wrap) wrap.title = ownedConfigured() ? t('filter.ownedOnlyTitle', { list: ownedLabelList(effectiveOwnedKeys()).join(', ') }) : t('owned.allAssumed');
   }
   function fillDataLists() {
-    /* Respeta el filtro activo del editor; fuera de él se muestra el catálogo. */
-    var plats = platformOptions || PLATFORM_KEYS;
-    $('dl-plat').innerHTML = plats.map(function (k) {
-      return '<option value="' + esc(displayValue('p', k)) + '"></option>';
-    }).join('');
-    $('dl-genre').innerHTML = sortedGenreKeys(GENRE_KEYS).map(function (k) {
+    var dlGenre = $('dl-genre');
+    if (dlGenre) dlGenre.innerHTML = sortedGenreKeys(GENRE_KEYS).map(function (k) {
       return '<option value="' + esc(t('genre.' + k)) + '"></option>';
     }).join('');
   }
-  /* Pinta el datalist, la ayuda y el enlace secundario. Antes del scraper el
+  /* ---------- selector nativo de plataforma ---------- */
+  function allowedPlatformKeys() { return platformOptions || PLATFORM_KEYS; }
+  /* Valor visible del campo: la clave de la opción elegida o el texto libre. */
+  function platformSelectValue() {
+    var sel = $('e-plat');
+    if (!sel) return '';
+    if (sel.value === PLATFORM_MANUAL) return String(($('e-plat-manual').value || '')).trim();
+    return sel.value || '';
+  }
+  function setPlatformSelectValue(value, allowed) {
+    var sel = $('e-plat'), manual = $('e-plat-manual');
+    if (!sel || !manual) return;
+    var raw = String(value || '').trim();
+    var list = allowed || allowedPlatformKeys();
+    var key = raw ? keyOf('p', raw) : '';
+    if (key && PLATFORM_KEYS.indexOf(key) !== -1 && list.indexOf(key) !== -1) {
+      sel.value = key;
+      manual.value = '';
+      manual.hidden = true;
+    } else if (raw) {
+      sel.value = PLATFORM_MANUAL;
+      manual.value = raw.slice(0, 40);
+      manual.hidden = false;
+    } else {
+      sel.value = '';
+      manual.value = '';
+      manual.hidden = true;
+    }
+  }
+  /* Reconstruye el <select> con las opciones vigentes. Se usa al abrir el modal,
+     tras "Autocompletar ficha", al ampliar con "Ver todas..." y al cambiar de
+     idioma, de modo que siempre quede listo para desplegarse con un toque. */
+  function renderPlatformSelect() {
+    var sel = $('e-plat');
+    if (!sel) return;
+    var plats = allowedPlatformKeys();
+    var current = platformSelectValue();
+    sel.innerHTML = '<option value="">' + esc(t('editor.platformPlaceholder')) + '</option>' +
+      plats.map(function (k) {
+        return '<option value="' + esc(k) + '">' + esc(displayValue('p', k)) + '</option>';
+      }).join('') +
+      '<option value="' + PLATFORM_MANUAL + '">' + esc(t('editor.platformManual')) + '</option>';
+    setPlatformSelectValue(current, plats);
+  }
+  /* Pinta el selector, la ayuda y el enlace secundario. Antes del scraper el
      enlace destaca el catalogo general; despues, solo las plataformas reales. */
   function setPlatformOptions(keys, helpKey, showAll) {
     platformOptions = (keys && keys.length) ? keys.slice() : null;
     platformHelpKey = helpKey || '';
     platformShowAll = !!showAll;
-    fillDataLists();
+    renderPlatformSelect();
     var help = $('e-plat-help');
     if (help) {
       help.textContent = platformHelpKey ? t(platformHelpKey) : '';
@@ -2379,7 +2423,7 @@
   function resetEditorPlatformOptions() {
     gamePlatformKeys = null;
     var platKeys = platformOptionsForOwned();
-    var currentKey = keyOf('p', $('e-plat').value.trim());
+    var currentKey = keyOf('p', platformSelectValue());
     if (PLATFORM_KEYS.indexOf(currentKey) !== -1 && platKeys.indexOf(currentKey) === -1) platKeys.push(currentKey);
     var hasOwned = ownedConfigured() && effectiveOwnedKeys().length > 0;
     setPlatformOptions(platKeys, hasOwned ? 'editor.platformFiltered' : '', hasOwned);
@@ -2389,7 +2433,7 @@
     var g = id ? state.games.filter(function (x) { return x.id === id; })[0] : null;
     $('ed-title').textContent = t(g ? 'editor.editTitle' : 'editor.addTitle');
     $('e-title').value = g ? g.title : '';
-    $('e-plat').value = g ? displayValue('p', g.platform) : (state.f.plat ? displayValue('p', state.f.plat) : '');
+    setPlatformSelectValue(g ? g.platform : (state.f.plat || ''));
     /* Al abrir (alta o edicion) se empieza siempre en vista compacta. */
     genreExpanded = false;
     setEditGenres(g ? genresOf(g) : (state.f.genre ? [state.f.genre] : []));
@@ -2433,7 +2477,7 @@
     var rel = splitRelease($('e-release').value);
     var data = {
       title: title,
-      platform: keyOf('p', $('e-plat').value.trim()),
+      platform: keyOf('p', platformSelectValue()),
       genres: editGenres.slice(),
       genre: editGenres[0] || '',
       releaseDate: rel.releaseDate,
@@ -3137,6 +3181,13 @@
   on('e-cover-fetch', 'click', searchCover);
   on('e-autofill', 'click', autofillMetadata);
   on('e-genres-toggle', 'click', toggleGenresView);
+  /* La opción final del selector nativo revela el campo de texto libre. */
+  on('e-plat', 'change', function () {
+    var manual = $('e-plat-manual');
+    if (!manual) return;
+    manual.hidden = this.value !== PLATFORM_MANUAL;
+    if (!manual.hidden) manual.focus();
+  });
   on('e-plat-show-all', 'click', function () {
     if (gamePlatformKeys && gamePlatformKeys.length) {
       /* Nivel 2: todas las plataformas publicadas por el juego, sin catalogo
@@ -3353,6 +3404,7 @@
     }
     try { initView(); } catch (e) {}
     try { fillDataLists(); } catch (e) {}
+    try { renderPlatformSelect(); } catch (e) {}
     try { renderGenreChips(); } catch (e) {}
     try { render(); }
     catch (e) {

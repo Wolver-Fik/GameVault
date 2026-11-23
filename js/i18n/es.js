@@ -131,6 +131,8 @@
     'editor.score': 'Mi puntuación',
     'editor.notes': 'Notas',
     'editor.platformPlaceholder': 'Selecciona una plataforma...',
+    'editor.platformManual': 'Escribir otra manualmente...',
+    'editor.platformManualPlaceholder': 'Escribe una plataforma...',
     'editor.genrePlaceholder': 'RPG, Acción...',
     'editor.coverFetch': 'Buscar portada',
     'editor.coverUpload': 'Subir imagen',
