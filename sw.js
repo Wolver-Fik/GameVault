@@ -1,6 +1,6 @@
 /* GameVault service worker: Network-First for HTML, Cache-First for assets. */
-/* v1.1.6: el autocompletado filtra las plataformas compatibles sin preseleccionarlas; purga forzada de las caches antiguas y trafico de Wikipedia/Wikimedia/Wikidata directo a la red. */
-var CACHE = 'gamevault-v1.1.6';
+/* v1.1.7: etiquetas de plataformas unificadas con "Mis Consolas" (siglas PlayStation, GBA y Retro / Emulador) y purga de las caches antiguas. */
+var CACHE = 'gamevault-v1.1.7';
 var ROOT = new URL('./', self.registration.scope).href;
 var PRECACHE = [
   './',

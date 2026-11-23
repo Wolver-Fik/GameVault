@@ -2,8 +2,8 @@
 (function () {
   var STORAGE = window.GVStorage;
   var I = window.GVI18N;
-  var CACHE_NAME = 'gamevault-v1.1.6';
-  var RELOAD_FLAG = 'gv-cache-reload-v1.1.6';
+  var CACHE_NAME = 'gamevault-v1.1.7';
+  var RELOAD_FLAG = 'gv-cache-reload-v1.1.7';
 
   function t(key, vars) {
     if (!I || typeof I.t !== 'function') return String(key);
@@ -276,8 +276,17 @@
   function displayValue(kind, value) {
     var key = keyOf(kind, value);
     var list = kind === 'p' ? PLATFORM_KEYS : kind === 'g' ? GENRE_KEYS : OWNED_PLATFORM_KEYS;
+    if (list.indexOf(key) === -1) return String(value || '');
     var prefix = kind === 'p' ? 'platform.' : kind === 'g' ? 'genre.' : 'owned.';
-    return list.indexOf(key) !== -1 ? t(prefix + key) : String(value || '');
+    var label = t(prefix + key);
+    /* "Mis Consolas" es la fuente de verdad: las plataformas compartidas deben
+       mostrar exactamente la misma etiqueta. Si falta en platform.* se reutiliza
+       owned.* para no dejar nunca una clave sin traducir. */
+    if (label === prefix + key && kind === 'p' && OWNED_PLATFORM_KEYS.indexOf(key) !== -1) {
+      var owned = t('owned.' + key);
+      if (owned !== 'owned.' + key) return owned;
+    }
+    return label;
   }
 
   /* Un híbrido absorbe siempre a sus componentes: no queremos
@@ -1637,7 +1646,7 @@
     /* Respeta el filtro activo del editor; fuera de él se muestra el catálogo. */
     var plats = platformOptions || PLATFORM_KEYS;
     $('dl-plat').innerHTML = plats.map(function (k) {
-      return '<option value="' + esc(t('platform.' + k)) + '"></option>';
+      return '<option value="' + esc(displayValue('p', k)) + '"></option>';
     }).join('');
     $('dl-genre').innerHTML = GENRE_KEYS.map(function (k) {
       return '<option value="' + esc(t('genre.' + k)) + '"></option>';
@@ -2652,7 +2661,7 @@
     navigator.serviceWorker.addEventListener('controllerchange', reloadClean);
     purgeOldCaches().then(function (purged) {
       /* La query fuerza al navegador a descargar el SW nuevo sin usar su HTTP cache. */
-      return navigator.serviceWorker.register('./sw.js?v=1.1.6', { scope: './' })
+      return navigator.serviceWorker.register('./sw.js?v=1.1.7', { scope: './' })
         .then(function (registration) {
           if (purged) setTimeout(reloadClean, 200);
           return registration.update();

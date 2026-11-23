@@ -37,12 +37,12 @@
     'status.abandonado': '中断',
     'platform.pc': 'PC',
     'platform.steamDeck': 'Steam Deck',
-    'platform.ps5': 'PlayStation 5',
-    'platform.ps4': 'PlayStation 4',
-    'platform.ps2': 'PlayStation 2',
+    'platform.ps5': 'PS5',
+    'platform.ps4': 'PS4',
+    'platform.ps2': 'PS2',
     'platform.xbox': 'Xbox Series X|S',
     'platform.switch': 'Nintendo Switch',
-    'platform.gba': 'Game Boy Advance',
+    'platform.gba': 'Game Boy Advance (GBA)',
     'platform.emulator': 'エミュレーター',
     'platform.retro': 'レトロ',
     'genre.action': 'アクション',
@@ -202,10 +202,11 @@
     ,'owned.xboxSeries': 'Xbox Series X|S'
     ,'owned.xboxOne': 'Xbox One'
     ,'owned.switch': 'Nintendo Switch'
-    ,'owned.gba': 'GBA'
+    ,'owned.gba': 'Game Boy Advance (GBA)'
     ,'owned.retroEmulator': 'レトロ / エミュレーター'
+    ,'platform.retroEmulator': 'レトロ / エミュレーター'
     ,'owned.mobile': 'モバイル (iOS / Android)'
-    ,'platform.ps3': 'PlayStation 3'
+    ,'platform.ps3': 'PS3'
     ,'platform.xboxSeries': 'Xbox Series X|S'
     ,'platform.xboxOne': 'Xbox One'
     ,'platform.mobile': 'モバイル (iOS / Android)'
@@ -232,9 +233,9 @@
     ,'recommend.close': '閉じる'
     ,'recommend.added': 'おすすめを未プレイに追加しました'
     /* コンソール・携帯機・レトロの完全カタログ (v1.0.7 で拡張)。 */
-    ,'platform.ps1': 'PlayStation 1'
-    ,'platform.psp': 'PlayStation Portable (PSP)'
-    ,'platform.psVita': 'PlayStation Vita'
+    ,'platform.ps1': 'PS1'
+    ,'platform.psp': 'PSP'
+    ,'platform.psVita': 'PS Vita'
     ,'platform.switch2': 'Nintendo Switch 2'
     ,'platform.wiiU': 'Wii U'
     ,'platform.wii': 'Wii'
