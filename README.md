@@ -1,8 +1,8 @@
-﻿# GameVault
+# GameVault
 
 [![Live demo / Demo en vivo](https://img.shields.io/badge/GitHub%20Pages-GameVault-6366F1?style=flat-square)](https://wolver-fik.github.io/GameVault/)
 
-[English](#english) Â· [EspaÃ±ol](#espaÃ±ol)
+[English](#english) · [Español](#español)
 
 ---
 
@@ -10,11 +10,11 @@
 
 Your game collection, backlog and played hours in one place. GameVault is a free, offline-friendly Progressive Web App: no account, no server, your data stays in your browser.
 
-**Live app / AplicaciÃ³n en vivo:** <https://wolver-fik.github.io/GameVault/>
+**Live app / Aplicación en vivo:** <https://wolver-fik.github.io/GameVault/>
 
 ## Features
 
-- **8 languages:** English, EspaÃ±ol, PortuguÃªs, FranÃ§ais, Italiano, Deutsch, Ð ÑƒÑÑÐºÐ¸Ð¹ and æ—¥æœ¬èªž. Automatic detection from `navigator.language`, saved in `localStorage`, switchable from the header.
+- **8 languages:** English, Español, Português, Français, Italiano, Deutsch, Русский and 日本語. Automatic detection from `navigator.language`, saved in `localStorage`, switchable from the header.
 - **Collection management:** add, edit and delete games; status (Playing, Pending, Completed, Platinum 100%, Abandoned), platform, genre, hours, score and notes.
 - **Metadata scraper & covers:** one-click auto-fill via Wikipedia & Wikidata for official cover art, localized synopsis (in your active language), release date, developer studio, and hybrid subgenres (*Survival Horror*, *Action-Adventure*, *Action RPG*, etc.), plus local image upload or custom URL.
 - **Smart game recommender:** suggests new titles outside your library based strictly on your favorite genres and owned hardware, ready to add to your backlog with full metadata.
@@ -28,8 +28,8 @@ Your game collection, backlog and played hours in one place. GameVault is a free
 ## Install / Instalar
 
 1. Open <https://wolver-fik.github.io/GameVault/> in your browser.
-2. **Android (Chrome):** menu â†’ *Install app* / *Add to Home screen*.
-3. **iOS (Safari):** Share button â†’ *Add to Home Screen*.
+2. **Android (Chrome):** menu → *Install app* / *Add to Home screen*.
+3. **iOS (Safari):** Share button → *Add to Home Screen*.
 4. Launch GameVault from the home screen; it works standalone and keeps the UI available offline.
 
 ## Project layout
@@ -50,37 +50,37 @@ icons/icon-*.png        180/192/512 px PNG icons (any + maskable)
 
 ## License
 
-[PolyForm Noncommercial License 1.0.0](./LICENSE) Â© 2026 Wolver-Fik.
+[PolyForm Noncommercial License 1.0.0](./LICENSE) © 2026 Wolver-Fik.
 
 ---
 
-<a id="espaÃ±ol"></a>
+<a id="español"></a>
 
-## EspaÃ±ol
+## Español
 
-Tu colecciÃ³n de videojuegos, tu backlog y las horas jugadas en un Ãºnico lugar. GameVault es una PWA gratuita y amigable con el modo sin conexiÃ³n: sin cuentas ni servidores, tus datos se quedan en tu navegador.
+Tu colección de videojuegos, tu backlog y las horas jugadas en un único lugar. GameVault es una PWA gratuita y amigable con el modo sin conexión: sin cuentas ni servidores, tus datos se quedan en tu navegador.
 
-**AplicaciÃ³n en vivo:** <https://wolver-fik.github.io/GameVault/>
+**Aplicación en vivo:** <https://wolver-fik.github.io/GameVault/>
 
-### CaracterÃ­sticas
+### Características
 
-- **8 idiomas:** English, EspaÃ±ol, PortuguÃªs, FranÃ§ais, Italiano, Deutsch, Ð ÑƒÑÑÐºÐ¸Ð¹ y æ—¥æœ¬èªž. DetecciÃ³n automÃ¡tica desde `navigator.language`, persistencia en `localStorage` y selector en el encabezado.
-- **GestiÃ³n de la colecciÃ³n:** aÃ±ade, edita y elimina juegos con estado (Jugando, Pendiente, Completado, Platino 100%, Abandonado), plataforma, gÃ©nero, horas, nota y notas.
-- **Scraper de metadatos y portadas:** autocompletado en un clic mediante Wikipedia y Wikidata con carÃ¡tula oficial, sinopsis localizada en el idioma activo de la app, fecha de lanzamiento, estudio desarrollador y subgÃ©neros hÃ­bridos (*Survival Horror*, *AcciÃ³n y aventura*, *Action RPG*, etc.), ademÃ¡s de subida local o URL personalizada.
-- **Recomendador inteligente de juegos:** sugiere tÃ­tulos nuevos fuera de tu colecciÃ³n basÃ¡ndose exclusivamente en tus gÃ©neros favoritos y consolas disponibles, listos para aÃ±adir a pendientes con ficha completa.
-- **Mis Consolas y filtro cruzado de plataformas:** configura tus consolas (incluyendo *Nintendo Switch 2*, portÃ¡tiles, sistemas retro, emuladores por familia y clientes de PC como *Steam, Epic, EA App, Battle.net, GOG*), agrupa tu biblioteca por consola y filtra automÃ¡ticamente en quÃ© plataformas de las que posees saliÃ³ cada tÃ­tulo.
-- **MÃºltiples gÃ©neros por juego:** asigna y filtra varios gÃ©neros o subgÃ©neros hÃ­bridos simultÃ¡neamente por tÃ­tulo.
-- **EstadÃ­sticas:** estado de la colecciÃ³n, barras por plataforma, totales, nota media y plataforma favorita.
+- **8 idiomas:** English, Español, Português, Français, Italiano, Deutsch, Русский y 日本語. Detección automática desde `navigator.language`, persistencia en `localStorage` y selector en el encabezado.
+- **Gestión de la colección:** añade, edita y elimina juegos con estado (Jugando, Pendiente, Completado, Platino 100%, Abandonado), plataforma, género, horas, nota y notas.
+- **Scraper de metadatos y portadas:** autocompletado en un clic mediante Wikipedia y Wikidata con carátula oficial, sinopsis localizada en el idioma activo de la app, fecha de lanzamiento, estudio desarrollador y subgéneros híbridos (*Survival Horror*, *Acción y aventura*, *Action RPG*, etc.), además de subida local o URL personalizada.
+- **Recomendador inteligente de juegos:** sugiere títulos nuevos fuera de tu colección basándose exclusivamente en tus géneros favoritos y consolas disponibles, listos para añadir a pendientes con ficha completa.
+- **Mis Consolas y filtro cruzado de plataformas:** configura tus consolas (incluyendo *Nintendo Switch 2*, portátiles, sistemas retro, emuladores por familia y clientes de PC como *Steam, Epic, EA App, Battle.net, GOG*), agrupa tu biblioteca por consola y filtra automáticamente en qué plataformas de las que posees salió cada título.
+- **Múltiples géneros por juego:** asigna y filtra varios géneros o subgéneros híbridos simultáneamente por título.
+- **Estadísticas:** estado de la colección, barras por plataforma, totales, nota media y plataforma favorita.
 - **Ruleta aleatoria:** elige un juego pendiente al azar, con filtro opcional por plataforma, y empieza a jugar con un toque.
 - **Copias de seguridad:** copia/exporta JSON o CSV y reemplaza la biblioteca desde una copia guardada.
-- **PWA:** instalable en iOS y Android con iconos PNG reales (180/192/512), manifiesto web, modo independiente y service worker (Network-First para HTML, cachÃ© sin conexiÃ³n para recursos).
+- **PWA:** instalable en iOS y Android con iconos PNG reales (180/192/512), manifiesto web, modo independiente y service worker (Network-First para HTML, caché sin conexión para recursos).
 
-### InstalaciÃ³n
+### Instalación
 
 1. Abre <https://wolver-fik.github.io/GameVault/> en tu navegador.
-2. **Android (Chrome):** menÃº â†’ *Instalar aplicaciÃ³n* / *AÃ±adir a la pantalla de inicio*.
-3. **iOS (Safari):** botÃ³n Compartir â†’ *AÃ±adir a la pantalla de inicio*.
-4. Abre GameVault desde la pantalla de inicio: funciona de forma independiente y mantiene la interfaz disponible sin conexiÃ³n.
+2. **Android (Chrome):** menú → *Instalar aplicación* / *Añadir a la pantalla de inicio*.
+3. **iOS (Safari):** botón Compartir → *Añadir a la pantalla de inicio*.
+4. Abre GameVault desde la pantalla de inicio: funciona de forma independiente y mantiene la interfaz disponible sin conexión.
 
 ### Estructura
 
@@ -89,10 +89,10 @@ index.html              Estructura + selector de idioma en el encabezado
 manifest.webmanifest    Manifiesto PWA (start_url y scope relativos)
 sw.js                   Service worker (HTML Network-First, recursos Cache-First)
 css/styles.css          Interfaz oscura y adaptable
-js/i18n.js              DetecciÃ³n, persistencia, t() y traducciÃ³n del DOM
+js/i18n.js              Detección, persistencia, t() y traducción del DOM
 js/i18n/*.js            Un diccionario modular por idioma
-js/storage.js           localStorage, datos de ejemplo, importaciÃ³n/exportaciÃ³n
-js/app.js               LÃ³gica de la app + registro del service worker
+js/storage.js           localStorage, datos de ejemplo, importación/exportación
+js/app.js               Lógica de la app + registro del service worker
 icons/icon.svg          Arte vectorial original
 icons/generate_icons.py Generador de iconos PNG con Pillow
 icons/icon-*.png        Iconos PNG de 180/192/512 px (any + maskable)
@@ -100,5 +100,4 @@ icons/icon-*.png        Iconos PNG de 180/192/512 px (any + maskable)
 
 ### Licencia
 
-[PolyForm Noncommercial License 1.0.0](./LICENSE) Â© 2026 Wolver-Fik.
-
+[PolyForm Noncommercial License 1.0.0](./LICENSE) © 2026 Wolver-Fik.
