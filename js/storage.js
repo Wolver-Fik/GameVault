@@ -4,6 +4,109 @@
   var OWNED_KEY = 'gamevault-owned-platforms-v1';
   var VIEW_KEY = 'gamevault-active-view-v1';
   var COLLECTIONS_KEY = 'gamevault-collections-v1';
+
+  /* ---------- Capa IndexedDB (Etapa 1) ----------
+     Espejo de todas las claves de la app en IndexedDB y store 'files' para
+     caratulas/imagenes grandes, sin el limite de 5 MB de localStorage. */
+  var DB_NAME = 'gamevault_db';
+  var DB_VERSION = 1;
+  var SCHEMA_VERSION = 2;
+  var STORE_STATE = 'state';
+  var STORE_FILES = 'files';
+  var STATE_KEY = 'main';
+  var MIRROR_KEYS = [KEY, OWNED_KEY, VIEW_KEY, COLLECTIONS_KEY, 'gamevault-lang'];
+  var dbPromise = null, idbReady = false, idbFailed = false;
+  var initPromise = null, writeChain = Promise.resolve(), memoryBackup = null;
+
+  function idbOpen() {
+    if (dbPromise) return dbPromise;
+    dbPromise = new Promise(function (resolve, reject) {
+      if (!('indexedDB' in window)) { reject(new Error('IndexedDB no disponible')); return; }
+      var req = indexedDB.open(DB_NAME, DB_VERSION);
+      req.onupgradeneeded = function () {
+        var db = req.result;
+        if (!db.objectStoreNames.contains(STORE_STATE)) db.createObjectStore(STORE_STATE);
+        if (!db.objectStoreNames.contains(STORE_FILES)) db.createObjectStore(STORE_FILES, { keyPath: 'id' });
+      };
+      req.onsuccess = function () { idbReady = true; resolve(req.result); };
+      req.onerror = function () { idbFailed = true; reject(req.error || new Error('No se pudo abrir IndexedDB')); };
+      req.onblocked = function () { idbFailed = true; reject(new Error('IndexedDB bloqueada')); };
+    });
+    return dbPromise;
+  }
+  function idbRequest(db, store, mode, run) {
+    return new Promise(function (resolve, reject) {
+      var tx = db.transaction(store, mode), os = tx.objectStore(store), result;
+      try { result = run(os); } catch (e) { reject(e); return; }
+      tx.oncomplete = function () { resolve(result && result.result !== undefined ? result.result : undefined); };
+      tx.onerror = function () { reject(tx.error || new Error('Error de IndexedDB')); };
+      tx.onabort = function () { reject(tx.error || new Error('Transaccion abortada')); };
+    });
+  }
+  function idbGet(store, key) {
+    return idbOpen().then(function (db) { return idbRequest(db, store, 'readonly', function (os) { return os.get(key); }) });
+  }
+  function idbGetAll(store) {
+    return idbOpen().then(function (db) { return idbRequest(db, store, 'readonly', function (os) { return os.getAll(); }) });
+  }
+  function idbPut(store, key, value) {
+    return idbOpen().then(function (db) {
+      return idbRequest(db, store, 'readwrite', function (os) { return key === undefined ? os.put(value) : os.put(value, key) });
+    });
+  }
+  function idbDelete(store, key) {
+    return idbOpen().then(function (db) { return idbRequest(db, store, 'readwrite', function (os) { return os.delete(key); }) });
+  }
+  function dumpLocal() {
+    var dump = {};
+    try { MIRROR_KEYS.forEach(function (k) { var v = localStorage.getItem(k); if (v !== null) dump[k] = v; }); } catch (e) {}
+    return dump;
+  }
+  function restoreLocal(dump) {
+    try {
+      MIRROR_KEYS.forEach(function (k) {
+        if (Object.prototype.hasOwnProperty.call(dump, k)) localStorage.setItem(k, dump[k]);
+        else localStorage.removeItem(k);
+      });
+    } catch (e) {}
+  }
+  function writeIDB(dump) {
+    writeChain = writeChain.then(function () {
+      return idbPut(STORE_STATE, STATE_KEY, {
+        schemaVersion: SCHEMA_VERSION, app: 'gamevault', localStorage: dump,
+        updatedAt: new Date().toISOString()
+      });
+    }).catch(function () { idbFailed = true; });
+    return writeChain;
+  }
+  function initIDB() {
+    if (initPromise) return initPromise;
+    initPromise = idbOpen().then(function () { return idbGet(STORE_STATE, STATE_KEY); })
+      .then(function (rec) {
+        var local = dumpLocal();
+        if (!rec) { writeIDB(local); return; }
+        var remote = (rec.localStorage && typeof rec.localStorage === 'object') ? rec.localStorage : {};
+        var merged = {}, k;
+        for (k in remote) if (Object.prototype.hasOwnProperty.call(remote, k)) merged[k] = remote[k];
+        for (k in local) if (Object.prototype.hasOwnProperty.call(local, k)) merged[k] = local[k];
+        restoreLocal(merged);
+        writeIDB(merged);
+      }).catch(function () { idbFailed = true; });
+    return initPromise;
+  }
+  function whenReady() { return initIDB(); }
+  function putFile(id, data, meta) {
+    var rec = {
+      id: String(id), data: data, type: (meta && meta.type) || '', name: (meta && meta.name) || '',
+      size: typeof data === 'string' ? data.length : ((data && data.size) || 0),
+      schemaVersion: SCHEMA_VERSION, createdAt: new Date().toISOString()
+    };
+    return idbPut(STORE_FILES, undefined, rec);
+  }
+  function getFile(id) { return idbGet(STORE_FILES, String(id)); }
+  function listFiles() { return idbGetAll(STORE_FILES); }
+  function deleteFile(id) { return idbDelete(STORE_FILES, String(id)); }
+
   var storageOk = true;
   var I = window.GVI18N;
 
@@ -223,10 +326,13 @@
   function save(games) {
     try { localStorage.setItem(KEY, JSON.stringify(games)); storageOk = true; }
     catch (e) { storageOk = false; }
+    writeIDB(dumpLocal());
     return storageOk;
   }
 
   function load() {
+    /* Migracion automatica localStorage -> IndexedDB. */
+    initIDB();
     var raw = null;
     try { raw = localStorage.getItem(KEY); } catch (e) { storageOk = false; }
     if (raw) {
@@ -245,9 +351,11 @@
         }
       } catch (e) {}
     }
-    var seeded = sample();
-    save(seeded);
-    return { games: seeded, storageOk: storageOk, seeded: true };
+    /* La demo NO se persiste aqui: si IndexedDB conserva una biblioteca real
+       y localStorage estaba vacio, escribirla ahora haria ganar a la demo en
+       la migracion. app.js la guarda solo cuando whenReady confirma que no
+       habia datos. */
+    return { games: sample(), storageOk: storageOk, seeded: true };
   }
 
   function sample() {
@@ -296,15 +404,57 @@
   /* El sobre JSON conserva las colecciones; se aceptan backups planos (v1.2.x). */
   function exportJSON(games, collections) {
     return JSON.stringify({
-      app: 'GameVault', version: 2,
+      app: 'GameVault', schemaVersion: SCHEMA_VERSION, version: 2,
       exportedAt: new Date().toISOString(),
       games: games,
       collections: Array.isArray(collections) ? collections : []
     }, null, 1);
   }
 
+  /* Validacion de origen/estructura antes de reemplazar la biblioteca. */
+  function validateBackup(data) {
+    if (data === null || data === undefined) return { ok: false, msgText: 'El archivo no contiene un respaldo válido.' };
+    if (!Array.isArray(data) && (typeof data !== 'object' || Array.isArray(data))) {
+      return { ok: false, msgText: 'El archivo no contiene un respaldo válido.' };
+    }
+    var envelope = !Array.isArray(data);
+    if (envelope && data.app && String(data.app).toLowerCase() !== 'gamevault') {
+      return { ok: false, msgText: 'Este respaldo pertenece a otra aplicación y no se importará.' };
+    }
+    if (envelope) {
+      var sv = data.schemaVersion == null ? (typeof data.version === 'number' ? data.version : 1) : Number(data.schemaVersion);
+      if (!isFinite(sv) || sv < 1 || sv > SCHEMA_VERSION) {
+        return { ok: false, msgText: 'La versión de esquema del respaldo no es compatible.' };
+      }
+    }
+    var arr = Array.isArray(data) ? data : data.games;
+    if (!Array.isArray(arr)) return { ok: false, msgText: 'El respaldo está dañado: no contiene juegos válidos.' };
+    /* Los backups planos (v1.2.x) no llevan marca de app: exige al menos un
+       juego reconocible para no reemplazar la biblioteca con un JSON ajeno. */
+    if (Array.isArray(data) && arr.length && !arr.some(function (g) {
+      return g && typeof g === 'object' && (g.title || g.platform || g.name);
+    })) return { ok: false, msgText: 'El respaldo no contiene juegos reconocibles de GameVault.' };
+    if (envelope && data.collections !== undefined && !Array.isArray(data.collections)) {
+      return { ok: false, msgText: 'El respaldo está incompleto: las colecciones no son válidas.' };
+    }
+    return { ok: true, version: envelope ? (data.schemaVersion || 1) : 1 };
+  }
+
+  function clearMemoryBackup() { memoryBackup = null; }
+  function restoreMemoryBackup() {
+    if (!memoryBackup) return false;
+    restoreLocal(memoryBackup);
+    writeIDB(memoryBackup);
+    memoryBackup = null;
+    return true;
+  }
+
   function importJSON(text) {
     var data = JSON.parse(text);
+    /* Copia de seguridad en memoria del estado actual antes de importar. */
+    memoryBackup = dumpLocal();
+    var check = validateBackup(data);
+    if (!check.ok) { var err = new Error(check.msgText); err.msgText = check.msgText; throw err; }
     var arr = Array.isArray(data) ? data : (data && data.games);
     if (!Array.isArray(arr)) throw new Error('formato');
     var cols = Array.isArray(data.collections) ? data.collections.map(normalizeCollection) : [];
@@ -318,6 +468,7 @@
       });
       Object.keys(names).forEach(function (k) { cols.push(names[k]); });
     }
+    /* Se mantiene hasta que app.js termina de aplicar la importacion. */
     return { games: arr.map(normalize), collections: cols };
   }
 
@@ -439,6 +590,7 @@
       else localStorage.setItem(OWNED_KEY, JSON.stringify(Array.isArray(list) ? list : []));
       storageOk = true;
     } catch (e) { storageOk = false; }
+    writeIDB(dumpLocal());
     return storageOk;
   }
   function isOwnedConfigured() { return loadOwnedPlatforms() !== null; }
@@ -496,6 +648,7 @@
       localStorage.setItem(COLLECTIONS_KEY, JSON.stringify(Array.isArray(list) ? list.map(normalizeCollection) : []));
       storageOk = true;
     } catch (e) { storageOk = false; }
+    writeIDB(dumpLocal());
     return storageOk;
   }
   /* Reinicio completo: borra juegos/sesiones/logros/colecciones/consolas/vista. */
@@ -532,6 +685,9 @@
     sample: sample,
     exportJSON: exportJSON,
     importJSON: importJSON,
+    validateBackup: validateBackup,
+    restoreMemoryBackup: restoreMemoryBackup,
+    clearMemoryBackup: clearMemoryBackup,
     importCSV: importCSV,
     toCSV: toCSV,
     download: download,
@@ -546,6 +702,15 @@
     isOwnedConfigured: isOwnedConfigured,
     groupGamesByPlatform: groupGamesByPlatform,
     getStorageOk: function () { return storageOk; },
-    setStorageOk: function (v) { storageOk = !!v; }
+    setStorageOk: function (v) { storageOk = !!v; },
+    /* Etapa 1: almacenamiento durable y sin limite de 5 MB */
+    DB_NAME: DB_NAME,
+    SCHEMA_VERSION: SCHEMA_VERSION,
+    whenReady: whenReady,
+    isIndexedDBReady: function () { return idbReady && !idbFailed; },
+    putFile: putFile,
+    getFile: getFile,
+    listFiles: listFiles,
+    deleteFile: deleteFile
   };
 })();

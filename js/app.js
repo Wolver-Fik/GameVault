@@ -2,8 +2,8 @@
 (function () {
   var STORAGE = window.GVStorage;
   var I = window.GVI18N;
-  var CACHE_NAME = 'gamevault-v1.3.3';
-  var RELOAD_FLAG = 'gv-cache-reload-v1.3.3';
+  var CACHE_NAME = 'gamevault-v1.4.0';
+  var RELOAD_FLAG = 'gv-cache-reload-v1.4.0';
 
   function t(key, vars) {
     if (!I || typeof I.t !== 'function') return String(key);
@@ -3725,18 +3725,28 @@
       b.textContent = t('backup.importConfirm');
       return;
     }
+    var isJson = false;
     try {
       var text = $('b-text').value.trim();
-      var data = /^[[{]/.test(text) ? STORAGE.importJSON(text) : STORAGE.importCSV(text);
+      isJson = /^[[{]/.test(text);
+      /* Validar primero: nunca se sobrescribe la biblioteca con un archivo
+         de otra app, incompleto o dañado. */
+      if (isJson && STORAGE.validateBackup) {
+        var parsed = JSON.parse(text), check = STORAGE.validateBackup(parsed);
+        if (!check.ok) throw new Error(check.msgText);
+      }
+      var data = isJson ? STORAGE.importJSON(text) : STORAGE.importCSV(text);
       state.games = data.games;
       state.collections = data.collections || [];
       state.f.col = '';
       saveCollections(); save(); closeBackup(); renderAll(); autoResolveMissingCovers();
-      $('b-msg').textContent = /^[[{]/.test(text) ? t('backup.imported') : t('backup.csvImported');
+      $('b-msg').textContent = isJson ? t('backup.imported') : t('backup.csvImported');
+      if (STORAGE.clearMemoryBackup) STORAGE.clearMemoryBackup();
     } catch (e) {
+      if (STORAGE.restoreMemoryBackup) STORAGE.restoreMemoryBackup();
       b.classList.remove('armed');
       b.textContent = t('backup.import');
-      $('b-msg').textContent = t('backup.importError');
+      $('b-msg').textContent = (e && e.message && /respaldo|aplicaci|esquema/i.test(e.message)) ? e.message : t('backup.importError');
     }
   });
   on('b-reset', 'click', function () {
@@ -3849,7 +3859,7 @@
     navigator.serviceWorker.addEventListener('controllerchange', reloadClean);
     purgeOldCaches().then(function (purged) {
       /* La query fuerza al navegador a descargar el SW nuevo sin usar su HTTP cache. */
-      return navigator.serviceWorker.register('./sw.js?v=1.3.3', { scope: './' })
+      return navigator.serviceWorker.register('./sw.js?v=1.4.0', { scope: './' })
         .then(function (registration) {
           if (purged) setTimeout(reloadClean, 200);
           return registration.update();
@@ -3889,6 +3899,18 @@
       storageOk = false;
       state.games = sampleGames();
     }
+    /* La migracion a IndexedDB es asincrona: refleja solo cambios reales. */
+    if (STORAGE.whenReady) STORAGE.whenReady().then(function () {
+      var res = STORAGE.load();
+      var games = res && Array.isArray(res.games) ? res.games : [];
+      /* Sin datos ni en localStorage ni en IndexedDB: ahora si se siembra
+         la demo y se guarda, sin riesgo de tapar una biblioteca real. */
+      if (res && res.seeded) { save(); return; }
+      if (JSON.stringify(games) === JSON.stringify(state.games)) return;
+      state.games = games;
+      try { state.collections = STORAGE.loadCollections(); } catch (e) { state.collections = []; }
+      renderAll();
+    }).catch(function () {});
     /* Traducir SIEMPRE, antes que cualquier otra operacion que pueda fallar. */
     window.GVApp.applyTranslations();
     try { initLanguage(); }

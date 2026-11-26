@@ -1,6 +1,8 @@
 /* GameVault service worker: Network-First for HTML, Cache-First for assets. */
 /* v1.3.5: filtros de estado en cuadrícula de 2 filas en móvil, sin scroll horizontal. */
-var CACHE = 'gamevault-v1.3.5';
+/* Etapa 1: sube la version con cada cambio. activate solo purga CacheStorage;
+   nunca borra IndexedDB (gamevault_db) ni localStorage. */
+var CACHE = 'gamevault-v1.4.0';
 var ROOT = new URL('./', self.registration.scope).href;
 var PRECACHE = [
   './',
@@ -70,7 +72,7 @@ self.addEventListener('activate', function (event) {
     caches.keys()
       .then(function (keys) {
         return Promise.all(keys.map(function (key) {
-          return key !== CACHE ? caches.delete(key) : Promise.resolve(false);
+          return key.indexOf('gamevault-') === 0 && key !== CACHE ? caches.delete(key) : Promise.resolve(false);
         }));
       })
       .then(function () { return self.clients.claim(); })
