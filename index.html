@@ -10,7 +10,7 @@
     /* elimina de entrada cualquier cache antigua de GameVault para que no se
        sirva una versión previa del selector de plataformas. */
     (function () {
-      var CURRENT = 'gamevault-v1.2.8';
+      var CURRENT = 'gamevault-v1.3.1';
       if (!('caches' in window)) return;
       try {
         caches.keys().then(function (keys) {
@@ -96,6 +96,9 @@
       <span data-i18n="view.consoles">Mis Consolas</span>
       <span class="badge" id="owned-badge" aria-hidden="true">0</span>
     </button>
+    <button class="view-tab" id="btn-wrapped" type="button" data-view="wrapped" aria-pressed="false">
+      <span data-i18n="view.wrapped">Resumen</span>
+    </button>
   </nav>
 
   <div id="notes"></div>
@@ -126,6 +129,8 @@
       <input class="field search" id="q" type="search" data-i18n-placeholder="search.placeholder" placeholder="Buscar por título  ( / )" autocomplete="off">
       <select class="field" id="f-plat" data-i18n-aria="filter.platformAria" aria-label="Plataforma"></select>
       <select class="field" id="f-genre" data-i18n-aria="filter.genreAria" aria-label="Género"></select>
+      <select class="field" id="f-col" data-i18n-aria="filter.collectionAria" aria-label="Colección"></select>
+      <button class="btn ghost col-manage" id="btn-collections" type="button" data-i18n="coll.manage">Gestionar colecciones</button>
       <select class="field" id="f-sort" data-i18n-aria="sort.aria" aria-label="Ordenar">
         <option value="reciente" data-i18n="sort.recent">Más recientes</option>
         <option value="nombre" data-i18n="sort.name">Nombre A–Z</option>
@@ -157,6 +162,44 @@
       <h2 data-i18n="console.gamesTitle">Juegos por consola</h2>
       <p class="msg" data-i18n="console.description">Tu biblioteca agrupada por máquina o sistema.</p>
       <div id="console-game-groups" class="console-game-groups" aria-live="polite"></div>
+    </section>
+  </section>
+
+  <section class="view" id="view-wrapped" data-view-panel="wrapped" hidden>
+    <section class="panel wrapped-head">
+      <div class="wrapped-title">
+        <h2 data-i18n="wrapped.title">Resumen anual / Gaming Wrapped</h2>
+        <p class="msg" data-i18n="wrapped.desc">Horas, juegos terminados y récords por año.</p>
+      </div>
+      <label class="lbl year-pick"><span data-i18n="wrapped.year">Año</span>
+        <select class="field" id="w-year" data-i18n-aria="wrapped.yearAria" aria-label="Año"></select>
+      </label>
+    </section>
+
+    <section class="stats wrapped-stats" aria-label="Resumen anual" data-i18n-aria="wrapped.aria">
+      <div class="stat"><span class="k" data-i18n="wrapped.hoursYear">Horas del año</span><span class="v num" id="w-hours">0</span><span class="s" id="w-hours-s"></span></div>
+      <div class="stat"><span class="k" data-i18n="wrapped.finishedYear">Juegos terminados</span><span class="v num" id="w-finished">0</span><span class="s" id="w-finished-s"></span></div>
+      <div class="stat"><span class="k" data-i18n="wrapped.sessionsYear">Sesiones</span><span class="v num" id="w-sessions">0</span><span class="s" id="w-sessions-s"></span></div>
+      <div class="stat"><span class="k" data-i18n="wrapped.perfectYear">Al 100%</span><span class="v num" id="w-perfect">0</span><span class="s" id="w-perfect-s"></span></div>
+    </section>
+
+    <section class="insight wrapped-insight">
+      <div class="panel">
+        <h2 data-i18n="wrapped.byYear">Por año</h2>
+        <div class="year-list" id="w-years"></div>
+      </div>
+      <div class="panel">
+        <h2 data-i18n="wrapped.topGames">Juegos más jugados</h2>
+        <div class="bars" id="w-top"></div>
+      </div>
+      <div class="panel">
+        <h2 data-i18n="wrapped.byGenre">Por género</h2>
+        <div class="bars" id="w-genres"></div>
+      </div>
+      <div class="panel">
+        <h2 data-i18n="wrapped.byPlatform">Por plataforma</h2>
+        <div class="bars" id="w-plats"></div>
+      </div>
     </section>
   </section>
 </div>
@@ -235,6 +278,51 @@
       <label class="lbl full"><span data-i18n="editor.notes">Notas</span>
         <textarea class="input" id="e-notes" maxlength="600" data-i18n-placeholder="editor.notesPlaceholder" placeholder="Capítulo, misión pendiente, por qué lo dejé..."></textarea>
       </label>
+
+      <details class="subpanel full" id="sess-panel">
+        <summary><span data-i18n="session.title">Sesiones de juego</span><span class="sub-sum" id="s-summary"></span></summary>
+        <div class="sub-body">
+          <p class="msg" id="s-msg" data-i18n="session.hint">Cada sesión suma horas al total del juego y a tu resumen anual.</p>
+          <div class="session-form">
+            <label class="lbl"><span data-i18n="session.date">Fecha</span>
+              <input class="input" id="s-date" type="date">
+            </label>
+            <label class="lbl"><span data-i18n="session.hours">Horas</span>
+              <input class="input num" id="s-hours" type="number" min="0" max="99" step="1" inputmode="numeric" value="1">
+            </label>
+            <label class="lbl"><span data-i18n="session.minutes">Minutos</span>
+              <input class="input num" id="s-mins" type="number" min="0" max="59" step="5" inputmode="numeric" value="0">
+            </label>
+            <label class="lbl session-note"><span data-i18n="session.note">Nota (opcional)</span>
+              <input class="input" id="s-note" type="text" maxlength="120" autocomplete="off">
+            </label>
+            <button class="btn primary session-add" id="s-add" type="button" data-i18n="session.add">+ Sesión</button>
+          </div>
+          <div class="session-list" id="s-list"></div>
+        </div>
+      </details>
+
+      <details class="subpanel full" id="ach-panel">
+        <summary><span data-i18n="ach.title">Logros / trofeos</span><span class="sub-sum" id="ach-progress"></span></summary>
+        <div class="sub-body ach-body">
+          <label class="lbl"><span data-i18n="ach.unlocked">Desbloqueados</span>
+            <input class="input num" id="a-unlocked" type="number" min="0" max="100000" step="1" inputmode="numeric" value="0">
+          </label>
+          <label class="lbl"><span data-i18n="ach.total">Total</span>
+            <input class="input num" id="a-total" type="number" min="0" max="100000" step="1" inputmode="numeric" value="0">
+          </label>
+          <div class="ach-badge" id="a-badge" hidden>★ <span data-i18n="ach.platinum">Platinado / 100%</span></div>
+          <span class="help full" data-i18n="ach.hint">Deja el total en 0 si este juego no tiene logros.</span>
+        </div>
+      </details>
+
+      <details class="subpanel full" id="coll-panel">
+        <summary><span data-i18n="coll.title">Colecciones</span><span class="sub-sum" id="coll-summary"></span></summary>
+        <div class="sub-body">
+          <div class="coll-chips" id="e-collections" role="group" data-i18n-aria="coll.aria" aria-label="Colecciones"></div>
+          <button class="link-btn" id="e-col-manage" type="button" data-i18n="coll.manage">Gestionar colecciones</button>
+        </div>
+      </details>
     </div>
     <div class="foot">
       <button class="btn danger left" id="e-del" type="button" hidden data-i18n="editor.delete">Eliminar</button>
@@ -285,13 +373,30 @@
       <button class="btn" id="b-export-csv" type="button" data-i18n="backup.exportCsv">Exportar CSV</button>
       <button class="btn" id="b-copy" type="button" data-i18n="backup.copy">Copiar</button>
       <button class="btn danger" id="b-import" type="button" data-i18n="backup.import">Reemplazar mi biblioteca con este texto</button>
+      <button class="btn danger" id="b-reset" type="button" data-i18n="backup.reset">Reiniciar datos</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="ov-collections" hidden>
+  <div class="modal collections-modal" role="dialog" aria-modal="true" aria-labelledby="c-title" hidden>
+    <h3 id="c-title" data-i18n="coll.title">Colecciones</h3>
+    <p class="msg" style="margin:0" data-i18n="coll.description">Crea listas propias y asígnalas a tus juegos desde su ficha.</p>
+    <div class="coll-create">
+      <input class="input" id="c-new" type="text" maxlength="40" autocomplete="off" data-i18n-placeholder="coll.namePlaceholder" placeholder="Ej. Co-op local">
+      <button class="btn primary" id="c-create" type="button" data-i18n="coll.create">Crear</button>
+    </div>
+    <div class="msg" id="c-msg"></div>
+    <div class="coll-list" id="c-list"></div>
+    <div class="foot">
+      <button class="btn ghost" id="c-close" type="button" data-i18n="backup.close">Cerrar</button>
     </div>
   </div>
 </div>
 
 <datalist id="dl-genre"></datalist>
 
-<!-- Orden obligatorio: 8 diccionarios -> controlador i18n -> storage -> app -->
+<!-- Orden obligatorio: 8 diccionarios -> i18n -> storage -> scraper -> app -->
 <script src="./js/i18n/en.js"></script>
 <script src="./js/i18n/es.js"></script>
 <script src="./js/i18n/pt.js"></script>
@@ -302,6 +407,7 @@
 <script src="./js/i18n/ja.js"></script>
 <script src="./js/i18n.js"></script>
 <script src="./js/storage.js"></script>
+<script src="./js/scraper.js"></script>
 <script src="./js/app.js"></script>
 </body>
 </html>

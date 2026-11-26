@@ -1,6 +1,6 @@
 /* GameVault service worker: Network-First for HTML, Cache-First for assets. */
-/* v1.2.8: nuevo isotipo/wordmark e iconos PWA sincronizados. */
-var CACHE = 'gamevault-v1.2.8';
+/* v1.3.5: filtros de estado en cuadrícula de 2 filas en móvil, sin scroll horizontal. */
+var CACHE = 'gamevault-v1.3.5';
 var ROOT = new URL('./', self.registration.scope).href;
 var PRECACHE = [
   './',
@@ -9,6 +9,7 @@ var PRECACHE = [
   './css/styles.css',
   './js/i18n.js',
   './js/storage.js',
+  './js/scraper.js',
   './js/app.js',
   './js/i18n/en.js',
   './js/i18n/es.js',

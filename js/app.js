@@ -2,8 +2,8 @@
 (function () {
   var STORAGE = window.GVStorage;
   var I = window.GVI18N;
-  var CACHE_NAME = 'gamevault-v1.2.8';
-  var RELOAD_FLAG = 'gv-cache-reload-v1.2.8';
+  var CACHE_NAME = 'gamevault-v1.3.3';
+  var RELOAD_FLAG = 'gv-cache-reload-v1.3.3';
 
   function t(key, vars) {
     if (!I || typeof I.t !== 'function') return String(key);
@@ -129,7 +129,10 @@
   var GENRE_KEYS = (STORAGE && Array.isArray(STORAGE.GENRE_KEYS))
     ? STORAGE.GENRE_KEYS.slice() : FALLBACK_GENRE_KEYS.slice();
 
-  var state = { games: [], f: { status: 'todos', plat: '', genre: '', sort: 'reciente', q: '', ownedOnly: false } };
+  var state = {
+    games: [], collections: [], wrappedYear: '',
+    f: { status: 'todos', plat: '', genre: '', col: '', sort: 'reciente', q: '', ownedOnly: false }
+  };
   var currentView = 'collection';
   var storageOk = true;
   var ownedPlatforms = null; /* null = no configurado, se asumen todas */
@@ -167,6 +170,11 @@
   var recommendPlatforms = [];
   var flashNote = '';
   var flashTimer = null;
+  /* v1.3.0: borradores de la ficha (sesiones, logros y colecciones). */
+  var editSessions = [];
+  var editAch = { unlocked: 0, total: 0 };
+  var editCollections = [];
+  var delCollectionId = null;
 
   var $ = function (id) { return document.getElementById(id); };
   /* El overlay y su modal se ocultan/show juntos; el atributo hidden va en el HTML. */
@@ -626,8 +634,8 @@
 
   /* ---------- vistas principales ---------- */
   function setView(view) {
-    currentView = view === 'consoles' ? 'consoles' : 'collection';
-    ['collection', 'consoles'].forEach(function (name) {
+    currentView = view === 'consoles' ? 'consoles' : (view === 'wrapped' ? 'wrapped' : 'collection');
+    ['collection', 'consoles', 'wrapped'].forEach(function (name) {
       var panel = $('view-' + name);
       if (panel) panel.hidden = name !== currentView;
     });
@@ -642,7 +650,7 @@
   function initView() {
     var saved = null;
     try { saved = localStorage.getItem(VIEW_KEY); } catch (e) {}
-    setView(saved === 'consoles' ? 'consoles' : 'collection');
+    setView(saved === 'consoles' || saved === 'wrapped' ? saved : 'collection');
   }
 
   /* ---------- almacenamiento ---------- */
@@ -656,6 +664,8 @@
     var res = STORAGE.load();
     state.games = res && Array.isArray(res.games) ? res.games : [];
     storageOk = !!(res && res.storageOk);
+    try { state.collections = STORAGE.loadCollections ? STORAGE.loadCollections() : []; }
+    catch (e) { state.collections = []; }
     try { ownedPlatforms = STORAGE.loadOwnedPlatforms ? STORAGE.loadOwnedPlatforms() : null; }
     catch (e) { ownedPlatforms = null; }
   }
@@ -1953,7 +1963,25 @@
       result.resolvedTitle = resolved.title;
       result.titleChanged = resolved.changed;
       result.titleSource = resolved.source;
-      return result;
+      /* Total de logros/trofeos: módulo auxiliar (Steam + Wikidata/Wikipedia).
+         No altera el título ni los géneros: solo añade un número al resultado. */
+      var scraper = window.GVScraper;
+      if (!scraper || typeof scraper.totalAchievements !== 'function') return result;
+      return Promise.resolve(scraper.totalAchievements({
+        title: title,
+        wikiText: enPage ? pageSectionContent(enPage) : '',
+        wikiExtract: result.pageExtract || enPageExtract || '',
+        summary: result.enSummary || '',
+        categories: result.pageCategories || '',
+        wikidataClaims: wd && wd.entity && wd.entity.claims
+      })).then(function (n) {
+        var total = Math.max(0, Math.round(Number(n) || 0));
+        result.totalAchievements = Math.min(total, 100000);
+        return result;
+      }, function () {
+        result.totalAchievements = 0;
+        return result;
+      });
     });
   }
 
@@ -1998,6 +2026,16 @@
     if (result.releaseDate) { $('e-release').value = result.releaseDate; done.push(result.releaseDate); }
     if (result.developer) { $('e-dev').value = result.developer; done.push(result.developer); }
     if (result.summary) { $('e-summary').value = result.summary; done.push(t('meta.summary')); }
+    /* El scraper puede rellenar el total de trofeos sin borrar lo ya desbloqueado
+       (se recorta si el nuevo total es menor) ni tocar título/géneros. */
+    if (result.totalAchievements > 0) {
+      editAch.total = result.totalAchievements;
+      editAch.unlocked = Math.min(editAch.unlocked, editAch.total);
+      $('a-total').value = editAch.total;
+      $('a-unlocked').value = editAch.unlocked;
+      syncEditorAchievements();
+      done.push(t('ach.total') + ': ' + editAch.total);
+    }
     /* Selector inteligente: original + ports/remasterizaciones ∩ Mis Consolas.
        El scraper SOLO filtra las opciones: nunca preselecciona ni rellena el
        campo, que queda vacío (con su placeholder) para que el usuario elija. */
@@ -2064,6 +2102,7 @@
   function matchesBase(g) {
     if (state.f.plat && keyOf('p', g.platform) !== state.f.plat) return false;
     if (state.f.genre && genresOf(g).indexOf(state.f.genre) === -1) return false;
+    if (state.f.col && (!Array.isArray(g.collections) || g.collections.indexOf(state.f.col) === -1)) return false;
     if (state.f.q && g.title.toLowerCase().indexOf(state.f.q.toLowerCase()) === -1) return false;
     if (state.f.ownedOnly && !gameMatchesOwned(g)) return false;
     return true;
@@ -2099,7 +2138,7 @@
   /* ---------- render ---------- */
   function renderStats() {
     var G = state.games, n = G.length;
-    var hours = G.reduce(function (a, g) { return a + g.hours; }, 0);
+    var hours = G.reduce(function (a, g) { return a + gameHours(g); }, 0);
     var done = G.filter(function (g) { return g.status === 'completado' || g.status === 'platino'; }).length;
     var plat = G.filter(function (g) { return g.status === 'platino'; }).length;
     var pend = G.filter(function (g) { return g.status === 'pendiente'; }).length;
@@ -2112,14 +2151,16 @@
     $('st-hours').innerHTML = esc(fmtNum(hours)) + '<small>h</small>';
     $('st-hours-s').textContent = n ? t('stats.avgHours', { hours: fmtNum(hours / n) }) : t('stats.noHours');
     $('st-pct').textContent = (n ? Math.round(done / n * 100) : 0) + '%';
-    $('st-pct-s').textContent = done + ' / ' + n + (plat ? t('stats.platinumPart', { n: plat }) : '') + (avg ? t('stats.avgScorePart', { score: fmtNum(avg) }) : '');
+    var perfect = G.filter(is100).length;
+    $('st-pct-s').textContent = done + ' / ' + n + (plat ? t('stats.platinumPart', { n: plat }) : '') +
+      (perfect ? t('stats.achPart', { n: perfect }) : '') + (avg ? t('stats.avgScorePart', { score: fmtNum(avg) }) : '');
 
     var P = {};
     G.forEach(function (g) {
       var k = keyOf('p', g.platform) || '';
       var name = k ? displayValue('p', k) : t('card.noPlatform');
       if (!P[name]) P[name] = { n: 0, h: 0 };
-      P[name].n++; P[name].h += g.hours;
+      P[name].n++; P[name].h += gameHours(g);
     });
     var arr = Object.keys(P).map(function (k) { return { name: k, n: P[k].n, h: P[k].h }; })
       .sort(function (a, b) { return b.n - a.n || b.h - a.h; });
@@ -2174,6 +2215,16 @@
     if (state.f.genre && ge.indexOf(state.f.genre) === -1) state.f.genre = '';
     fillSelect($('f-plat'), 'p', t('filter.platform'), pl, state.f.plat);
     fillSelect($('f-genre'), 'g', t('filter.genre'), ge, state.f.genre);
+    var colSel = $('f-col');
+    if (colSel) {
+      if (state.f.col && !state.collections.some(function (c) { return c.id === state.f.col; })) state.f.col = '';
+      colSel.innerHTML = '<option value="">' + esc(t('filter.collection')) + '</option>' +
+        state.collections.map(function (c) {
+          return '<option value="' + esc(c.id) + '"' + (c.id === state.f.col ? ' selected' : '') + '>' + esc(c.name) + '</option>';
+        }).join('');
+      colSel.value = state.f.col;
+      colSel.hidden = !state.collections.length;
+    }
     var own = $('f-owned');
     if (own) own.checked = !!state.f.ownedOnly;
     var wrap = $('owned-toggle-wrap');
@@ -2248,14 +2299,32 @@
     }
   }
 
-  function coverHtml(g, cls) {
+  /* Insignia de trofeos: ★ 100% al completar, porcentaje simple mientras avanza. */
+  function trophyBadge(g) {
+    var a = g && g.achievements;
+    var total = a ? Number(a.total) || 0 : 0;
+    var pct = total > 0 ? achPct(a) : 0;
+    if (!pct) return { html: '', full: false };
+    var full = pct >= 100;
+    return {
+      html: '<span class="trophy' + (full ? ' is-full' : '') + '" title="' +
+        esc(t(full ? 'ach.platinum' : 'ach.progress', { p: pct })) + '">' +
+        (full ? '★ ' : '') + pct + '%</span>',
+      full: full
+    };
+  }
+
+  function coverHtml(g, cls, withTrophy) {
     var has = !!g.cover;
-    return '<div class="' + (cls || 'cover') + (has ? ' has-img' : '') + '" style="' + coverStyle(g.title) + '">' +
+    var trophy = withTrophy ? trophyBadge(g) : { html: '', full: false };
+    var trophyClass = trophy.html ? (trophy.full ? ' has-trophy has-trophy-full' : ' has-trophy') : '';
+    return '<div class="' + (cls || 'cover') + (has ? ' has-img' : '') + trophyClass + '" style="' + coverStyle(g.title) + '">' +
       (has ? '<img class="cover-img" src="' + esc(g.cover) + '" alt="" loading="lazy" onerror="this.style.display=\'none\';this.parentNode.classList.remove(\'has-img\')">' : '') +
       '<span class="ini" aria-hidden="true">' + esc(initials(g.title)) + '</span>' +
       (g.example ? '<span class="ex">' + esc(t('card.example')) + '</span>' : '') +
       (g.score ? '<span class="score">' + g.score + '<small>/10</small></span>' : '') +
       (g.platform ? '<span class="plat">' + esc(displayValue('p', g.platform)) + '</span>' : '') +
+      trophy.html +
     '</div>';
   }
 
@@ -2264,13 +2333,13 @@
     var detail = [g.developer, g.releaseYear].filter(Boolean).join(' · ');
     return '<div class="card" data-id="' + g.id + '">' +
       '<button class="card" type="button" data-open="' + g.id + '" style="width:100%" aria-label="' + esc(t('card.editAria', { title: g.title })) + '">' +
-        coverHtml(g, 'cover') +
+        coverHtml(g, 'cover', true) +
         '<div class="meta"><span class="t" title="' + esc(g.title) + '">' + esc(g.title) + '</span>' +
         genreTagsHtml(g) +
         (detail ? '<span class="d" title="' + esc(detail) + '">' + esc(detail) + '</span>' : '') + '</div>' +
       '</button>' +
-      '<div class="row"><span class="pill" style="--c:' + st.color + '">' + esc(statusLabel(st)) + '</span>' +
-      '<span class="row" style="gap:6px"><span class="hrs">' + fmtNum(g.hours) + ' h</span>' +
+      '<div class="row card-foot"><span class="pill" style="--c:' + st.color + '" title="' + esc(statusLabel(st)) + '"><span>' + esc(statusLabel(st)) + '</span></span>' +
+      '<span class="card-actions"><span class="hrs num">' + fmtNum(g.hours) + 'h</span>' +
       '<button class="plus" type="button" data-hour="' + g.id + '" aria-label="' + esc(t('card.addHourAria', { title: g.title })) + '">+1h</button></span></div>' +
     '</div>';
   }
@@ -2341,10 +2410,348 @@
     renderTabs();
     renderGrid();
     renderConsoleGames();
+    renderWrapped();
     renderNotes();
+    if ($('ov-collections') && !$('ov-collections').hidden) renderCollections();
   }
   /* Alias publico de renderizado para el arranque y para depuracion. */
   function render() { renderAll(); }
+
+  /* ---------- v1.3.0: sesiones, logros, colecciones y resumen anual ---------- */
+  function isPerfect(g) {
+    var a = g && g.achievements;
+    return !!(a && a.total > 0 && a.unlocked >= a.total);
+  }
+  /* "Al 100%" es la UNION de platino declarado y trofeos completos: un juego
+     contado dos veces sigue siendo un solo juego. */
+  function is100(g) { return !!(g && (g.status === 'platino' || isPerfect(g))); }
+  /* g.hours ya incluye las sesiones registradas (se suman al guardar cada una).
+     max() evita contarlas dos veces y cubre importaciones donde solo vinieron
+     las sesiones. Así el resumen nunca muestra 0 h con juegos cargados. */
+  function gameHours(g) {
+    return Math.max(Math.max(0, Number(g && g.hours) || 0), sessionHours(g && g.sessions));
+  }
+  /* Dirección inversa: al entrar en la ficha (o al completar los logros en ella)
+     el estado pasa a "Platino 100%". */
+  function syncStatusFromAchievements(g) {
+    if (!g || g.status === 'platino' || !isPerfect(g)) return false;
+    g.status = 'platino';
+    g.completedAt = g.completedAt || todayISO();
+    g.updated = Date.now();
+    return true;
+  }
+  /* Sincronización completa al abrir una ficha: platino => unlocked = total,
+     y 100% de trofeos => estado platino (sin duplicar juegos al contar). */
+  function syncGameAchievements(g) {
+    if (!g) return false;
+    var a = g.achievements, changed = false;
+    if (g.status === 'platino' && a && a.total > 0 && a.unlocked !== a.total) {
+      a.unlocked = a.total;
+      g.updated = Date.now();
+      changed = true;
+    }
+    return syncStatusFromAchievements(g) || changed;
+  }
+  function achPct(a) {
+    return a && a.total > 0 ? Math.min(100, Math.round(a.unlocked / a.total * 100)) : 0;
+  }
+  function todayISO() {
+    var d = new Date();
+    return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+  }
+  function sessionHours(list) {
+    return (list || []).reduce(function (a, s) { return a + (Number(s.minutes) || 0) / 60; }, 0);
+  }
+  function saveCollections() {
+    storageOk = (STORAGE && typeof STORAGE.saveCollections === 'function')
+      ? STORAGE.saveCollections(state.collections) : false;
+    return storageOk;
+  }
+  function barHtml(label, value, max, detail) {
+    return '<div class="bar"><span class="n" title="' + esc(label) + '">' + esc(label) + '</span>' +
+      '<span class="t"><i style="width:' + (max ? Math.max(2, value / max * 100) : 0) + '%"></i></span>' +
+      '<span class="c">' + esc(detail) + '</span></div>';
+  }
+  function yearOf(date) { return /^(\d{4})-/.exec(String(date || '')) ? String(date).slice(0, 4) : ''; }
+
+  /* Resumen anual: g.hours ya incluye las sesiones registradas, así que se
+     usa como total de cada juego sin sumarlas dos veces. Los juegos sin sesión
+     también cuentan: "Más jugados", "Por género" y "Por plataforma" deben
+     reflejar siempre las horas de la biblioteca cargada. */
+  function renderWrapped() {
+    var years = {}, sessions = [];
+    state.games.forEach(function (g) {
+      (g.sessions || []).forEach(function (s) {
+        var y = yearOf(s.date);
+        if (!y) return;
+        years[y] = true;
+        sessions.push({ y: y, g: g, minutes: Number(s.minutes) || 0 });
+      });
+      if (g.completedAt && yearOf(g.completedAt)) years[yearOf(g.completedAt)] = true;
+    });
+    var listYears = Object.keys(years).sort().reverse();
+    if (state.wrappedYear && listYears.indexOf(state.wrappedYear) === -1) state.wrappedYear = '';
+    var sel = $('w-year');
+    if (sel) {
+      sel.innerHTML = '<option value="">' + esc(t('wrapped.allYears')) + '</option>' +
+        listYears.map(function (y) {
+          return '<option value="' + esc(y) + '"' + (y === state.wrappedYear ? ' selected' : '') + '>' + esc(y) + '</option>';
+        }).join('');
+      sel.value = state.wrappedYear;
+    }
+    var use = state.wrappedYear ? sessions.filter(function (s) { return s.y === state.wrappedYear; }) : sessions;
+    var minutes = use.reduce(function (a, s) { return a + s.minutes; }, 0);
+    /* Sin filtro de año: toda la biblioteca. Con año: juegos con sesión o con
+       finalización en ese año (incluidos los que no registraron sesiones). */
+    function gamesOfYear(y) {
+      return state.games.filter(function (g) {
+        if (!y) return true;
+        if (yearOf(g.completedAt) === y) return true;
+        return (g.sessions || []).some(function (s) { return yearOf(s.date) === y; });
+      });
+    }
+    var active = gamesOfYear(state.wrappedYear);
+    var hours = active.reduce(function (a, g) { return a + gameHours(g); }, 0);
+    var finished = active.filter(function (g) { return g.status === 'completado' || is100(g); });
+    var perfect = active.filter(is100);
+    var byGame = {}, byGenre = {}, byPlat = {};
+    active.forEach(function (g) {
+      var id = g.id || g.title;
+      var h = gameHours(g);
+      if (!byGame[id]) byGame[id] = { title: g.title, hours: 0 };
+      byGame[id].hours += h;
+      var genre = displayValue('g', primaryGenre(g)) || t('card.noGenre');
+      byGenre[genre] = (byGenre[genre] || 0) + h;
+      var plat = displayValue('p', g.platform) || t('card.noPlatform');
+      byPlat[plat] = (byPlat[plat] || 0) + h;
+    });
+    function bars(box, map) {
+      if (!box) return;
+      var keys = Object.keys(map).sort(function (a, b) { return map[b] - map[a] || a.localeCompare(b, localeTag()); });
+      if (!keys.length) {
+        box.innerHTML = '<span class="msg">' + esc(active.length ? t('stats.noData') : t('wrapped.noSessions')) + '</span>';
+        return;
+      }
+      var max = map[keys[0]];
+      box.innerHTML = keys.slice(0, 6).map(function (k) {
+        return barHtml(k, map[k], max, fmtNum(map[k]) + ' h');
+      }).join('');
+    }
+    $('w-hours').innerHTML = esc(fmtNum(hours)) + '<small>h</small>';
+    $('w-hours-s').textContent = t('wrapped.sessionTotal', { n: use.length });
+    $('w-finished').textContent = finished.length;
+    $('w-finished-s').textContent = t('wrapped.perfectTotal', { n: perfect.length });
+    $('w-sessions').textContent = use.length;
+    $('w-sessions-s').textContent = t('wrapped.minutesTotal', { n: Math.round(minutes) });
+    $('w-perfect').textContent = perfect.length;
+    $('w-perfect-s').textContent = t('wrapped.achievementsDone');
+    bars($('w-top'), (function () {
+      var m = {};
+      Object.keys(byGame).forEach(function (k) { m[byGame[k].title] = byGame[k].hours; });
+      return m;
+    })());
+    bars($('w-genres'), byGenre);
+    bars($('w-plats'), byPlat);
+    var ybox = $('w-years');
+    if (ybox) {
+      var perYear = listYears.map(function (y) {
+        var group = gamesOfYear(y);
+        return {
+          y: y,
+          hours: group.reduce(function (a, g) { return a + gameHours(g); }, 0),
+          fin: group.filter(function (g) { return g.status === 'completado' || is100(g); }).length
+        };
+      });
+      var maxYear = perYear.reduce(function (a, r) { return Math.max(a, r.hours); }, 0);
+      ybox.innerHTML = perYear.length ? perYear.map(function (r) {
+        return '<button class="year-row" type="button" data-w-year="' + esc(r.y) + '" aria-pressed="' + (state.wrappedYear === r.y) + '">' +
+          '<span class="y">' + esc(r.y) + '</span>' +
+          '<span class="t"><i style="width:' + (maxYear ? Math.max(2, r.hours / maxYear * 100) : 0) + '%"></i></span>' +
+          '<span class="h num">' + esc(fmtNum(r.hours)) + ' h</span>' +
+          '<span class="f num">' + esc(t('wrapped.finishedShort', { n: r.fin })) + '</span></button>';
+      }).join('') : '<span class="msg">' + esc(t('wrapped.noYears')) + '</span>';
+    }
+  }
+
+  /* ---------- sesiones y logros dentro de la ficha ---------- */
+  function renderSessions() {
+    var total = editSessions.length;
+    var sum = sessionHours(editSessions);
+    var ss = $('s-summary');
+    if (ss) ss.textContent = total ? t('session.count', { n: total, h: fmtNum(sum) }) : '';
+    var box = $('s-list');
+    if (box) {
+      box.innerHTML = editSessions.length ? editSessions.map(function (s) {
+        return '<div class="session-item"><span class="sd">' + esc(s.date) + '</span>' +
+          '<span class="sn">' + esc(s.note || '') + '</span>' +
+          '<span class="sh num">' + esc(fmtNum(s.minutes / 60)) + ' h</span>' +
+          '<button class="btn sm ghost" type="button" data-session="' + esc(s.id) + '" aria-label="' + esc(t('session.delete')) + '">×</button></div>';
+      }).join('') : '<span class="msg">' + esc(t('session.empty')) + '</span>';
+    }
+    var p = achPct(editAch);
+    var ap = $('ach-progress');
+    if (ap) ap.textContent = editAch.total ? t('ach.progress', { p: p }) : '';
+    var badge = $('a-badge');
+    if (badge) badge.hidden = !(editAch.total > 0 && p === 100);
+    var cs = $('coll-summary');
+    if (cs) cs.textContent = editCollections.length ? t('coll.selected', { n: editCollections.length }) : '';
+  }
+  function renderEditorCollections() {
+    var box = $('e-collections');
+    if (!box) return;
+    box.innerHTML = state.collections.length ? state.collections.map(function (c) {
+      var on = editCollections.indexOf(c.id) !== -1;
+      return '<button class="coll-chip" type="button" data-col-toggle="' + esc(c.id) + '" aria-pressed="' + on + '">' + esc(c.name) + '</button>';
+    }).join('') : '<span class="msg">' + esc(t('coll.empty')) + '</span>';
+  }
+  function persistEditorExtras() {
+    var statusSel = $('e-status');
+    var status = statusSel ? statusSel.value : '';
+    /* Los logros al 100% plasman el estado; y un platino sin total conocido
+       no se inventa trofeos (total = 0 se deja intacto). */
+    if (editAch.total > 0 && editAch.unlocked >= editAch.total) status = 'platino';
+    else if (status === 'platino' && editAch.total > 0) editAch.unlocked = editAch.total;
+    if (statusSel && status) statusSel.value = status;
+    $('a-unlocked').value = editAch.unlocked;
+    $('a-total').value = editAch.total;
+    if (!editingId) { renderSessions(); renderEditorCollections(); return; }
+    state.games.forEach(function (g) {
+      if (g.id !== editingId) return;
+      g.sessions = editSessions.map(function (s) {
+        return { id: s.id, date: s.date, minutes: s.minutes, note: s.note };
+      });
+      g.achievements = { unlocked: editAch.unlocked, total: editAch.total };
+      if (status) g.status = status;
+      g.completedAt = (g.status === 'completado' || g.status === 'platino')
+        ? (g.completedAt || todayISO()) : '';
+      g.collections = editCollections.slice();
+      g.hours = Math.max(0, parseFloat($('e-hours').value) || 0);
+      g.updated = Date.now();
+    });
+    save(); renderAll(); renderSessions(); renderEditorCollections();
+  }
+  function addSession() {
+    var date = $('s-date').value;
+    if (!date) { date = todayISO(); $('s-date').value = date; }
+    if (!STORAGE.validDate || !STORAGE.validDate(date)) {
+      showFlash(t('session.errDate'));
+      return;
+    }
+    var hours = Math.max(0, Math.floor(parseFloat($('s-hours').value) || 0));
+    var mins = Math.max(0, Math.floor(parseFloat($('s-mins').value) || 0));
+    var minutes = Math.min(100000, hours * 60 + mins);
+    if (!minutes) { showFlash(t('session.errDuration')); return; }
+    editSessions.unshift({
+      id: uid(), date: date, minutes: minutes,
+      note: String($('s-note').value || '').trim().slice(0, 120)
+    });
+    $('e-hours').value = Math.round((Math.max(0, parseFloat($('e-hours').value) || 0) + minutes / 60) * 10) / 10;
+    $('s-hours').value = 1; $('s-mins').value = 0; $('s-note').value = '';
+    persistEditorExtras();
+    showFlash(t('session.added'));
+  }
+  function removeSession(id) {
+    var found = null;
+    editSessions.forEach(function (s) { if (s.id === id) found = s; });
+    if (!found) return;
+    editSessions = editSessions.filter(function (s) { return s.id !== id; });
+    $('e-hours').value = Math.max(0, Math.round(((parseFloat($('e-hours').value) || 0) - found.minutes / 60) * 10) / 10);
+    persistEditorExtras();
+    showFlash(t('session.deleted'));
+  }
+  /* Sincronización instantánea de la ficha: "Platino 100%" => desbloqueados =
+     total, y 100% de trofeos => estado platino. Lee los propios inputs (no solo
+     editAch) para que reaccione mientras el usuario escribe, sin esperar al blur. */
+  function syncEditorAchievements() {
+    var totalEl = $('a-total'), unlockedEl = $('a-unlocked'), statusSel = $('e-status');
+    if (!totalEl || !unlockedEl || !statusSel) return;
+    var total = Math.max(0, Math.min(100000, Math.floor(parseFloat(totalEl.value) || 0)));
+    var unlocked = Math.max(0, Math.min(total, Math.floor(parseFloat(unlockedEl.value) || 0)));
+    if (statusSel.value === 'platino' && total > 0) unlocked = total;
+    if (total > 0 && unlocked >= total) statusSel.value = 'platino';
+    editAch = { unlocked: unlocked, total: total };
+    unlockedEl.value = unlocked;
+    totalEl.value = total;
+    renderSessions();
+  }
+  function updateAchievements() {
+    syncEditorAchievements();
+    persistEditorExtras();
+  }
+  function logHour(id) {
+    state.games.forEach(function (g) {
+      if (g.id !== id) return;
+      g.sessions = Array.isArray(g.sessions) ? g.sessions.slice(0, 499) : [];
+      g.sessions.unshift({ id: uid(), date: todayISO(), minutes: 60, note: '' });
+      g.hours = Math.max(0, g.hours + 1);
+      g.updated = Date.now();
+    });
+    save(); renderAll();
+  }
+
+  /* ---------- colecciones personalizadas ---------- */
+  function renderCollections() {
+    var box = $('c-list');
+    if (!box) return;
+    box.innerHTML = state.collections.length ? state.collections.map(function (c) {
+      var n = state.games.filter(function (g) {
+        return Array.isArray(g.collections) && g.collections.indexOf(c.id) !== -1;
+      }).length;
+      return '<div class="coll-row"><input class="input" type="text" maxlength="40" value="' + esc(c.name) +
+        '" data-col-name="' + esc(c.id) + '" aria-label="' + esc(t('coll.name')) + '">' +
+        '<button class="btn sm' + (delCollectionId === c.id ? ' danger armed' : ' danger') + '" type="button" data-col-del="' + esc(c.id) + '">' +
+        esc(t(delCollectionId === c.id ? 'coll.deleteConfirm' : 'coll.delete')) + '</button>' +
+        '<span class="badge" aria-hidden="true">' + n + '</span></div>';
+    }).join('') : '<span class="msg">' + esc(t('coll.empty')) + '</span>';
+  }
+  function openCollections() {
+    delCollectionId = null;
+    $('c-new').value = '';
+    $('c-msg').textContent = '';
+    renderCollections();
+    setOverlay('ov-collections', true);
+  }
+  function closeCollections() { delCollectionId = null; setOverlay('ov-collections', false); }
+  function createCollection() {
+    var input = $('c-new');
+    var name = String(input.value || '').trim().slice(0, 40);
+    if (!name) { $('c-msg').textContent = t('coll.errName'); input.focus(); return; }
+    for (var i = 0; i < state.collections.length; i++) {
+      if (state.collections[i].name.toLowerCase() === name.toLowerCase()) {
+        $('c-msg').textContent = t('coll.errDuplicate'); return;
+      }
+    }
+    state.collections.unshift({ id: uid(), name: name });
+    saveCollections(); renderAll(); renderCollections(); renderEditorCollections();
+    input.value = ''; $('c-msg').textContent = t('coll.created');
+  }
+  function renameCollection(id, value) {
+    var name = String(value || '').trim().slice(0, 40);
+    state.collections.forEach(function (c) { if (c.id === id && name) c.name = name; });
+    saveCollections(); renderAll(); renderCollections(); renderEditorCollections();
+  }
+  function deleteCollection(id) {
+    if (delCollectionId !== id) {
+      delCollectionId = id;
+      renderCollections();
+      return;
+    }
+    state.collections = state.collections.filter(function (c) { return c.id !== id; });
+    state.games.forEach(function (g) {
+      if (Array.isArray(g.collections)) g.collections = g.collections.filter(function (x) { return x !== id; });
+    });
+    if (state.f.col === id) state.f.col = '';
+    editCollections = editCollections.filter(function (x) { return x !== id; });
+    delCollectionId = null;
+    saveCollections(); save(); renderAll(); renderCollections(); renderEditorCollections();
+    $('c-msg').textContent = t('coll.removed');
+  }
+  function toggleCollection(id) {
+    if (!id) return;
+    var i = editCollections.indexOf(id);
+    if (i === -1) editCollections.push(id); else editCollections.splice(i, 1);
+    renderEditorCollections(); persistEditorExtras();
+  }
 
   /* ---------- editor ---------- */
   function buildScores() {
@@ -2431,6 +2838,8 @@
   function openEditor(id) {
     editingId = id || null;
     var g = id ? state.games.filter(function (x) { return x.id === id; })[0] : null;
+    /* Entrar en la ficha sincroniza ambos sentidos antes de rellenar el form. */
+    if (syncGameAchievements(g)) { save(); renderAll(); }
     $('ed-title').textContent = t(g ? 'editor.editTitle' : 'editor.addTitle');
     $('e-title').value = g ? g.title : '';
     setPlatformSelectValue(g ? g.platform : (state.f.plat || ''));
@@ -2451,7 +2860,25 @@
     editCoverSource = g ? (g.coverSource || '') : '';
     coverMsg = '';
     coverSearchId++;
+    /* v1.3.0: la ficha abre con copias de los datos auxiliares; cualquier cambio
+       se guarda al instante cuando el juego ya existe. */
+    editSessions = (g && Array.isArray(g.sessions)) ? g.sessions.map(function (s) {
+      return { id: s.id || uid(), date: s.date, minutes: s.minutes, note: s.note || '' };
+    }) : [];
+    editAch = g && g.achievements ? { unlocked: g.achievements.unlocked || 0, total: g.achievements.total || 0 }
+      : { unlocked: 0, total: 0 };
+    editCollections = (g && Array.isArray(g.collections)) ? g.collections.slice() : [];
+    $('s-date').value = todayISO();
+    $('s-hours').value = 1; $('s-mins').value = 0; $('s-note').value = '';
+    $('a-unlocked').value = editAch.unlocked; $('a-total').value = editAch.total;
+    /* Un platino con total conocido abre ya con desbloqueados = total. */
+    syncEditorAchievements();
+    ['sess-panel', 'ach-panel', 'coll-panel'].forEach(function (pid) {
+      var el = $(pid); if (el) el.open = false;
+    });
     buildScores();
+    renderSessions();
+    renderEditorCollections();
     renderCoverPreview();
     $('e-err').textContent = '';
     resetAutofillMsg();
@@ -2489,8 +2916,28 @@
       score: editScore,
       notes: $('e-notes').value,
       cover: editCover || '',
-      coverSource: editCover ? (editCoverSource || 'manual') : ''
+      coverSource: editCover ? (editCoverSource || 'manual') : '',
+      sessions: editSessions.map(function (s) {
+        return { id: s.id, date: s.date, minutes: s.minutes, note: s.note || '' };
+      }),
+      achievements: { unlocked: editAch.unlocked, total: editAch.total },
+      collections: editCollections.slice(),
+      completedAt: ''
     };
+    /* Sincronización bidireccional antes de guardar: platino => todos los
+       trofeos; 100% de trofeos => estado "Platino 100%". */
+    if (data.status === 'platino' && data.achievements.total > 0) {
+      data.achievements.unlocked = data.achievements.total;
+      editAch.unlocked = data.achievements.total;
+      $('a-unlocked').value = editAch.unlocked;
+    }
+    if (data.achievements.total > 0 && data.achievements.unlocked >= data.achievements.total) {
+      data.status = 'platino';
+      $('e-status').value = 'platino';
+    }
+    var oldGame = editingId ? state.games.filter(function (x) { return x.id === editingId; })[0] : null;
+    var isDone = data.status === 'completado' || data.status === 'platino';
+    data.completedAt = isDone ? ((oldGame && oldGame.completedAt) || todayISO()) : '';
     var shouldAutoCover = !data.cover;
     var savedId = editingId;
     if (editingId) {
@@ -3093,9 +3540,11 @@
     b.textContent = t('backup.import');
   }
   function openBackup() {
-    $('b-text').value = STORAGE.exportJSON(state.games);
+    $('b-text').value = STORAGE.exportJSON(state.games, state.collections);
     $('b-msg').textContent = '';
     resetBackupButton();
+    var reset = $('b-reset');
+    if (reset) { reset.classList.remove('armed'); reset.textContent = t('backup.reset'); }
     setOverlay('ov-backup', true);
   }
   function closeBackup() { setOverlay('ov-backup', false); }
@@ -3124,6 +3573,8 @@
     setPlatformOptions(platformOptions, platformHelpKey, platformShowAll);
     renderGenreChips();
     renderAll();
+    if (!$('ov-edit').hidden) { renderSessions(); renderEditorCollections(); }
+    if (!$('ov-collections').hidden) renderCollections();
     if (!$('ov-recommend').hidden) {
       renderRecommendReason();
       if (recommendCurrent) loadRecommendation(recommendCurrent.title);
@@ -3149,15 +3600,9 @@
     var el = $(id);
     if (el && typeof el.addEventListener === 'function') el.addEventListener(event, handler);
   }
-  function addHour(id) {
-    state.games.forEach(function (g) {
-      if (g.id === id) { g.hours = Math.max(0, g.hours + 1); g.updated = Date.now(); }
-    });
-    save(); renderAll();
-  }
   function clearFilters() {
     state.f.status = 'todos';
-    state.f.plat = ''; state.f.genre = ''; state.f.q = ''; state.f.ownedOnly = false;
+    state.f.plat = ''; state.f.genre = ''; state.f.col = ''; state.f.q = ''; state.f.ownedOnly = false;
     $('q').value = '';
     var own = $('f-owned'); if (own) own.checked = false;
     renderAll();
@@ -3168,6 +3613,20 @@
   on('btn-backup', 'click', openBackup);
   on('btn-random', 'click', openRoulette);
   on('btn-recommend', 'click', openRecommend);
+  on('btn-collections', 'click', openCollections);
+  on('c-close', 'click', closeCollections);
+  on('c-create', 'click', createCollection);
+  on('c-new', 'keydown', function (e) { if (e.key === 'Enter') createCollection(); });
+  on('s-add', 'click', addSession);
+  /* 'input' dispara en cada tecla y en los botones +/-: la sincronización no
+     espera a que el campo pierda el foco. */
+  on('a-unlocked', 'input', updateAchievements);
+  on('a-total', 'input', updateAchievements);
+  on('e-status', 'change', function () {
+    syncEditorAchievements();
+    if (editingId) persistEditorExtras();
+  });
+  on('w-year', 'change', function () { state.wrappedYear = this.value; renderWrapped(); });
   on('ow-all', 'click', selectAllOwned);
   on('rc-close', 'click', closeRecommend);
   on('rc-again', 'click', function () {
@@ -3252,11 +3711,11 @@
     } catch (e) { fallback(); }
   });
   on('b-export-json', 'click', function () {
-    STORAGE.download('gamevault-backup.json', STORAGE.exportJSON(state.games), 'application/json');
+    STORAGE.download('gamevault-backup.json', STORAGE.exportJSON(state.games, state.collections), 'application/json');
     $('b-msg').textContent = t('backup.jsonExported');
   });
   on('b-export-csv', 'click', function () {
-    STORAGE.download('gamevault-backup.csv', STORAGE.toCSV(state.games), 'text/csv;charset=utf-8');
+    STORAGE.download('gamevault-backup.csv', STORAGE.toCSV(state.games, state.collections), 'text/csv;charset=utf-8');
     $('b-msg').textContent = t('backup.csvExported');
   });
   on('b-import', 'click', function () {
@@ -3267,19 +3726,41 @@
       return;
     }
     try {
-      state.games = STORAGE.importJSON($('b-text').value);
-      save(); closeBackup(); renderAll(); autoResolveMissingCovers();
-      $('b-msg').textContent = t('backup.imported');
+      var text = $('b-text').value.trim();
+      var data = /^[[{]/.test(text) ? STORAGE.importJSON(text) : STORAGE.importCSV(text);
+      state.games = data.games;
+      state.collections = data.collections || [];
+      state.f.col = '';
+      saveCollections(); save(); closeBackup(); renderAll(); autoResolveMissingCovers();
+      $('b-msg').textContent = /^[[{]/.test(text) ? t('backup.imported') : t('backup.csvImported');
     } catch (e) {
       b.classList.remove('armed');
       b.textContent = t('backup.import');
       $('b-msg').textContent = t('backup.importError');
     }
   });
+  on('b-reset', 'click', function () {
+    var b = $('b-reset');
+    if (!b.classList.contains('armed')) {
+      b.classList.add('armed');
+      b.textContent = t('backup.resetConfirm');
+      return;
+    }
+    if (!STORAGE || typeof STORAGE.resetAll !== 'function') return;
+    var res = STORAGE.resetAll();
+    state.games = res.games;
+    state.collections = res.collections;
+    state.f.col = ''; state.wrappedYear = '';
+    storageOk = STORAGE.getStorageOk ? STORAGE.getStorageOk() : true;
+    closeBackup();
+    try { localStorage.removeItem(VIEW_KEY); } catch (e) {}
+    window.location.reload();
+  });
 
   on('q', 'input', function () { state.f.q = this.value.trim(); renderAll(); });
   on('f-plat', 'change', function () { state.f.plat = this.value; renderAll(); });
   on('f-genre', 'change', function () { state.f.genre = this.value; renderAll(); });
+  on('f-col', 'change', function () { state.f.col = this.value; renderAll(); });
   on('f-sort', 'change', function () { state.f.sort = this.value; renderAll(); });
   on('f-owned', 'change', function () { state.f.ownedOnly = !!this.checked; renderAll(); });
 
@@ -3287,7 +3768,7 @@
     var el;
     if ((el = closest(e.target, '[data-view]'))) { setView(el.getAttribute('data-view')); return; }
     if ((el = closest(e.target, '[data-st]'))) { state.f.status = el.getAttribute('data-st'); renderAll(); return; }
-    if ((el = closest(e.target, '[data-hour]'))) { addHour(el.getAttribute('data-hour')); return; }
+    if ((el = closest(e.target, '[data-hour]'))) { logHour(el.getAttribute('data-hour')); return; }
     if ((el = closest(e.target, '[data-open]'))) { openEditor(el.getAttribute('data-open')); return; }
     if (closest(e.target, '[data-add]')) { openEditor(); return; }
     if (closest(e.target, '[data-clear]')) { clearFilters(); return; }
@@ -3299,6 +3780,12 @@
     if ((el = closest(e.target, '[data-owned-toggle]'))) {
       toggleOwnedKey(el.getAttribute('data-owned-toggle')); return;
     }
+    if ((el = closest(e.target, '[data-session]'))) { removeSession(el.getAttribute('data-session')); return; }
+    if ((el = closest(e.target, '[data-col-toggle]'))) { toggleCollection(el.getAttribute('data-col-toggle')); return; }
+    if ((el = closest(e.target, '[data-col-del]'))) { deleteCollection(el.getAttribute('data-col-del')); return; }
+    if ((el = closest(e.target, '[data-w-year]'))) {
+      state.wrappedYear = el.getAttribute('data-w-year'); renderWrapped(); return;
+    }
     if ((el = closest(e.target, '[data-sc]'))) { editScore = Number(el.getAttribute('data-sc')); buildScores(); return; }
     if ((el = closest(e.target, '[data-addh]'))) {
       var field = $('e-hours');
@@ -3309,10 +3796,16 @@
     if (e.target === $('ov-random')) closeRoulette();
     if (e.target === $('ov-recommend')) closeRecommend();
     if (e.target === $('ov-backup')) closeBackup();
+    if (e.target === $('ov-collections')) closeCollections();
+  });
+  document.addEventListener('change', function (e) {
+    var el = closest(e.target, '[data-col-name]');
+    if (el) renameCollection(el.getAttribute('data-col-name'), el.value);
   });
 
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') {
+      if (!$('ov-collections').hidden) { closeCollections(); return; }
       if (!$('ov-edit').hidden) closeEditor();
       if (!$('ov-random').hidden) closeRoulette();
       if (!$('ov-recommend').hidden) closeRecommend();
@@ -3356,7 +3849,7 @@
     navigator.serviceWorker.addEventListener('controllerchange', reloadClean);
     purgeOldCaches().then(function (purged) {
       /* La query fuerza al navegador a descargar el SW nuevo sin usar su HTTP cache. */
-      return navigator.serviceWorker.register('./sw.js?v=1.2.8', { scope: './' })
+      return navigator.serviceWorker.register('./sw.js?v=1.3.3', { scope: './' })
         .then(function (registration) {
           if (purged) setTimeout(reloadClean, 200);
           return registration.update();
@@ -3386,7 +3879,7 @@
   }
 
   function forceHiddenModals() {
-    ['ov-edit', 'ov-random', 'ov-recommend', 'ov-backup'].forEach(function (id) { setOverlay(id, false); });
+    ['ov-edit', 'ov-random', 'ov-recommend', 'ov-backup', 'ov-collections'].forEach(function (id) { setOverlay(id, false); });
   }
 
   function boot() {

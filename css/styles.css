@@ -275,21 +275,38 @@ select.input option { background: var(--panel); color: var(--fg); }
   box-shadow: 0 12px 26px rgba(0,0,0,.42), 0 0 20px rgba(99,102,241,.28);
 }
 .cover .ini { position: absolute; inset: 0; display: grid; place-items: center; font-size: 54px; font-weight: 800; letter-spacing: -0.04em; color: rgba(255,255,255,.16); }
-.cover .plat { position: relative; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; background: rgba(8,10,16,.62); padding: 3px 7px; border-radius: 6px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cover .plat { position: relative; flex: 0 1 auto; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; background: rgba(8,10,16,.62); padding: 3px 7px; border-radius: 6px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* El trofeo vive en la portada, enfrente de la plataforma, nunca en el pie de texto. */
+.cover.has-trophy .plat { max-width: calc(100% - 58px); }
+.cover.has-trophy-full .plat { max-width: calc(100% - 74px); }
 .cover .score { position: absolute; top: 10px; right: 10px; background: rgba(8,10,16,.72); border-radius: 8px; padding: 3px 8px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .cover .score small { color: var(--muted); font-weight: 600; }
+.cover .trophy {
+  position: absolute; right: 12px; bottom: 12px; z-index: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+  max-width: calc(100% - 20px); padding: 3px 7px; border-radius: 7px;
+  background: rgba(8,10,16,.78); border: 1px solid rgba(255,255,255,.10);
+  color: var(--fg); font-size: 11px; font-weight: 800; line-height: 1.2;
+  font-variant-numeric: tabular-nums; white-space: nowrap; hyphens: none;
+}
+.cover .trophy.is-full { color: var(--s-plat); border-color: rgba(199,155,255,.48); }
 .cover .ex { position: absolute; top: 10px; left: 10px; background: var(--accent); color: var(--accent-ink); font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 6px; letter-spacing: .04em; text-transform: uppercase; }
 .meta { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .meta .t { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.meta .g { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; align-items: center; gap: 4px; min-width: 0; }
-.gtag { background: var(--panel-2); border-radius: 5px; padding: 1px 6px; line-height: 1.3; white-space: nowrap; }
-.gsep { opacity: .55; flex: none; }
+/* Los generos envuelven enteros: nunca se recorta una letra a mitad en tarjetas estrechas. */
+.meta .g { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 4px; color: var(--muted); font-size: 11px; line-height: 1.3; min-width: 0; max-width: 100%; }
+.meta .g .gtag { max-width: 100%; background: var(--panel-2); border-radius: 5px; padding: 1px 5px; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.meta .g .gsep { display: none; }
 .meta .d { color: var(--muted); font-size: 11px; opacity: .82; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+/* Pie de tarjeta: una sola linea. Estado (con punto) a la izquierda, horas + boton a la derecha. */
+.row { display: flex; flex-wrap: nowrap; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; max-width: 100%; overflow-wrap: normal; hyphens: none; -webkit-hyphens: none; }
+.card-foot .pill { flex: 0 1 auto; min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; }
+.card-foot .pill > span { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; color: var(--c); }
-.pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
-.hrs { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.plus { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 2px 8px; font-size: 11px; font-weight: 600; color: var(--muted); }
+.pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--c); flex: 0 0 7px; }
+.card-actions { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; white-space: nowrap; hyphens: none; -webkit-hyphens: none; }
+.hrs { flex: none; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.plus { flex: none; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 2px 8px; font-size: 11px; font-weight: 600; line-height: 1.2; color: var(--muted); white-space: nowrap; }
 .plus:hover { color: var(--fg); border-color: #34405a; }
 .empty { border: 1px dashed var(--line); border-radius: 14px; padding: 44px 20px; text-align: center; color: var(--muted); display: flex; flex-direction: column; gap: 12px; align-items: center; }
 .empty b { color: var(--fg); font-size: 16px; }
@@ -412,6 +429,88 @@ textarea.input.summary { min-height: 54px; }
 textarea.mono { font-family: var(--mono); font-size: 12px; min-height: 200px; }
 .msg { color: var(--muted); font-size: 12px; min-height: 16px; }
 
+/* ---------- v1.3.0: sesiones, logros, colecciones y resumen anual ---------- */
+/* Pestañas con etiqueta corta: nunca se parte una palabra ni se parte el texto
+   a guion en Safari iOS / Chrome Android. */
+.view-tab, .view-tab span, .tabs .tab, .toolbar select.field, .toolbar .col-manage,
+.year-row, .coll-chip, .ach-mini, .subpanel > summary {
+  white-space: nowrap; hyphens: none; -webkit-hyphens: none; overflow-wrap: normal;
+}
+.view-tab { max-width: 100%; }
+.view-tab span { overflow: hidden; text-overflow: ellipsis; }
+
+/* Secciones plegables dentro de la ficha: el modal sigue compacto hasta que se abren. */
+.subpanel { border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); min-width: 0; }
+.subpanel > summary {
+  cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px; font-size: 11px; font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--muted);
+}
+.subpanel > summary::-webkit-details-marker { display: none; }
+.subpanel > summary::before { content: "+"; color: var(--accent); font-size: 14px; line-height: 1; }
+.subpanel[open] > summary::before { content: "−"; }
+.subpanel > summary:hover { color: var(--fg); }
+.sub-sum { margin-left: auto; color: var(--accent); font-size: 11px; letter-spacing: 0; text-transform: none; font-variant-numeric: tabular-nums; }
+.sub-body { border-top: 1px solid var(--line); padding: 12px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.session-form { display: grid; grid-template-columns: 1fr .7fr .7fr; gap: 8px; align-items: end; }
+.session-form .session-note { grid-column: 1 / 3; }
+.session-form .session-add { grid-column: 3; min-height: 40px; justify-content: center; padding: 9px 8px; }
+.session-list { display: flex; flex-direction: column; gap: 6px; max-height: 190px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.session-item {
+  display: flex; align-items: center; gap: 8px; min-width: 0; border: 1px solid var(--line);
+  background: var(--bg); border-radius: 8px; padding: 6px 8px; font-size: 12px;
+}
+.session-item .sd { color: var(--muted); font-variant-numeric: tabular-nums; flex: none; }
+.session-item .sn { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--fg); }
+.session-item .sh { color: var(--accent); font-weight: 700; flex: none; font-variant-numeric: tabular-nums; }
+.session-item .btn.sm { padding: 3px 7px; flex: none; }
+.ach-body { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: end; }
+.ach-body .help { grid-column: 1 / -1; }
+.ach-badge, .ach-mini {
+  display: inline-flex; align-items: center; gap: 4px; border-radius: 999px;
+  background: rgba(199,155,255,.16); color: var(--s-plat); border: 1px solid rgba(199,155,255,.45);
+  font-size: 11px; font-weight: 800; padding: 3px 8px; line-height: 1.2;
+}
+.ach-badge { margin-bottom: 2px; }
+.ach-mini { padding: 2px 6px; font-size: 10px; flex: none; }
+.coll-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.coll-chip {
+  border: 1px solid var(--line); background: var(--bg); color: var(--muted);
+  border-radius: 999px; padding: 5px 10px; font-size: 12px; font-weight: 600; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.coll-chip:hover { color: var(--fg); border-color: #34405a; }
+.coll-chip[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.coll-manage { padding: 8px 10px; font-size: 12px; }
+.coll-create { display: flex; gap: 8px; align-items: stretch; }
+.coll-create .input { flex: 1; }
+.coll-list { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.coll-row { display: flex; gap: 8px; align-items: center; min-width: 0; }
+.coll-row .input { flex: 1; }
+.coll-row .btn { flex: none; }
+
+/* vista "Resumen anual" */
+.wrapped-head { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.wrapped-title { min-width: 0; }
+.wrapped-title h2 { font-size: 15px; letter-spacing: -0.01em; text-transform: none; color: var(--fg); }
+.wrapped-title .msg { margin: 4px 0 0; }
+.year-pick { flex-direction: row; align-items: center; gap: 8px; }
+.year-pick select { min-width: 132px; max-width: 190px; }
+.year-list { display: flex; flex-direction: column; gap: 6px; }
+.year-row {
+  display: grid; grid-template-columns: 56px minmax(0, 1fr) auto auto; gap: 10px; align-items: center;
+  width: 100%; min-width: 0; text-align: left; border: 1px solid var(--line); background: var(--bg);
+  border-radius: 9px; padding: 8px 10px; color: var(--fg); font-size: 12px;
+}
+.year-row:hover { border-color: #34405a; background: var(--panel); }
+.year-row[aria-pressed="true"] { border-color: var(--accent); background: rgba(127,140,255,.10); }
+.year-row .y { font-weight: 700; color: var(--accent); }
+.year-row .t { height: 6px; border-radius: 4px; background: var(--panel-2); overflow: hidden; }
+.year-row .t i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), #A855F7); border-radius: 4px; }
+.year-row .h, .year-row .f { color: var(--muted); font-variant-numeric: tabular-nums; }
+.wrapped-insight { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.wrapped-stats .stat .k { overflow-wrap: anywhere; }
+
 
 /* cover art */
 .cover img.cover-img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block; }
@@ -461,7 +560,17 @@ textarea.mono { font-family: var(--mono); font-size: 12px; min-height: 200px; }
   .toolbar select.field { width: 100%; max-width: 100%; min-width: 0; flex: none; }
   .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
   .card, .cover, .meta, .row { min-width: 0; max-width: 100%; }
-  .meta .t, .meta .g { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .meta .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .meta .g { white-space: normal; overflow: visible; }
+  .grid .cover { padding: 9px; }
+  .grid .cover .score { top: 8px; right: 8px; }
+  .grid .cover .ex { top: 8px; left: 8px; }
+  .grid .cover .trophy { right: 9px; bottom: 9px; padding: 2px 6px; font-size: 10px; }
+  .grid .cover.has-trophy .plat { max-width: calc(100% - 50px); }
+  .grid .cover.has-trophy-full .plat { max-width: calc(100% - 64px); }
+  .card-foot { gap: 6px; }
+  .card-actions { gap: 4px; }
+  .card-actions .plus { padding: 2px 6px; }
   .form { grid-template-columns: minmax(0, 1fr); }
   .pick { flex-direction: column; align-items: flex-start; }
   .modal { padding: 18px; }
@@ -472,7 +581,90 @@ textarea.mono { font-family: var(--mono); font-size: 12px; min-height: 200px; }
   .title-row { flex-wrap: wrap; }
   .title-row .input { flex-basis: 100%; }
   .btn.autofill { width: 100%; justify-content: center; }
+  /* Pestañas: una sola línea, sin guiones partidos ni desbordamiento. */
+  .view-tab { padding: 10px 8px; font-size: 12px; flex: 0 1 auto; }
+  .view-tab span, .tabs .tab, .toolbar select.field, .toolbar .col-manage { white-space: nowrap; hyphens: none; -webkit-hyphens: none; }
+  .toolbar .col-manage { width: 100%; justify-content: center; }
+  /* Filtros de estado: 6 píldoras completas en 2 filas de 3, sin scroll lateral. */
+  .tabs {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    overflow-x: visible;
+    padding-bottom: 0;
+  }
+  .tabs .tab {
+    box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%;
+    justify-content: center; text-align: center;
+    padding: 8px 6px; font-size: 0.78rem;
+    white-space: nowrap; hyphens: none; -webkit-hyphens: none;
+    gap: 4px;
+  }
+  .tabs .tab .c { font-size: 10px; }
+  .wrapped-head { flex-direction: column; align-items: stretch; }
+  .year-pick { justify-content: space-between; }
+  .year-pick select { max-width: 60%; }
+  .wrapped-insight { grid-template-columns: minmax(0, 1fr); }
+  .year-row { grid-template-columns: 48px minmax(0, 1fr) auto; gap: 8px; }
+  .year-row .f { display: none; }
+  .session-form { grid-template-columns: 1fr 1fr; }
+  .session-form .session-note { grid-column: 1 / -1; }
+  .session-form .session-add { grid-column: 1 / -1; }
+  .ach-body { grid-template-columns: 1fr 1fr; }
+  .ach-body .ach-badge { grid-column: 1 / -1; }
+  .coll-create { flex-wrap: wrap; }
+  .coll-create .input { flex-basis: 100%; }
+  .coll-create .btn { width: 100%; justify-content: center; }
+  .coll-row { flex-wrap: wrap; }
+  .coll-row .input { flex-basis: 100%; }
+  .coll-row .btn { flex: 1; justify-content: center; }
+  .subpanel > summary { font-size: 10px; padding: 9px 10px; }
+  .sub-sum { max-width: 45%; overflow: hidden; text-overflow: ellipsis; }
 }
+@media (max-width: 519.98px) {
+  /* Rejilla de 2 columnas: pie de tarjeta en dos lineas limpias.
+     Fila 1: estado completo con su punto (sin ellipsis ni recorte).
+     Fila 2: horas a la izquierda y "+1h" a la derecha.
+     En >= 520px se conserva la fila unica de .row .card-foot. */
+  .card-foot {
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 6px;
+  }
+  .card-foot .pill {
+    width: 100%;
+    max-width: none;
+    overflow: visible;
+    white-space: nowrap;
+  }
+  .card-foot .pill > span {
+    max-width: none;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: nowrap;
+  }
+  .card-foot .card-actions {
+    width: 100%;
+    max-width: 100%;
+    justify-content: space-between;
+  }
+
+  /* El trofeo se mueve a la esquina superior derecha de la portada: debajo
+     del score cuando existe (es hermano anterior en el DOM) o junto a "EJEMPLO"
+     cuando no hay score. Asi la etiqueta de plataforma usa todo el ancho. */
+  .grid .cover .trophy { top: 8px; right: 8px; bottom: auto; }
+  .grid .cover .score ~ .trophy { top: 38px; }
+  .grid .cover .plat,
+  .grid .cover.has-trophy .plat,
+  .grid .cover.has-trophy-full .plat {
+    max-width: 100%;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+  }
+}
+
 @media (max-width: 380px) {
   .actions { grid-template-columns: 1fr; }
   .stat .v { font-size: 22px; }

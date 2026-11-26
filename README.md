@@ -21,8 +21,10 @@ Your game collection, backlog and played hours in one place. GameVault is a free
 - **My Consoles & platform filtering:** manage your owned consoles (including *Nintendo Switch 2*, handhelds, retro systems, per-family emulators, and PC clients like *Steam, Epic, EA App, Battle.net, GOG*), view games grouped by console, and auto-filter compatible platforms when adding games.
 - **Multi-genre tagging:** assign and filter multiple genres or hybrid subgenres per game.
 - **Insights:** collection status, per-platform bars, totals, average rating and favorite platform.
+- **Sessions & yearly wrapped:** log dated sessions (hours + minutes) that add up to each game's total; review playtime, finished games, achievements and top titles by genre/platform filtered by year.
+- **Achievements & collections:** optional unlocked/total counters with an automatic 100% badge, plus custom collections assignable to several games and filterable from the library toolbar.
 - **Random picker:** pick a pending game at random, optionally filtered by platform, and start playing with one tap.
-- **Backups:** copy/export JSON or CSV and replace the library from a previously saved backup.
+- **Backups:** copy/export JSON or CSV (including sessions, achievements and collections), replace the library from a saved backup, or reset all data to start fresh.
 - **PWA:** installable on iOS and Android with real PNG icons (180/192/512), web manifest, standalone display and a service worker (Network-First for HTML, offline cache for assets).
 
 ## Install / Instalar
@@ -71,8 +73,10 @@ Tu colección de videojuegos, tu backlog y las horas jugadas en un único lugar.
 - **Mis Consolas y filtro cruzado de plataformas:** configura tus consolas (incluyendo *Nintendo Switch 2*, portátiles, sistemas retro, emuladores por familia y clientes de PC como *Steam, Epic, EA App, Battle.net, GOG*), agrupa tu biblioteca por consola y filtra automáticamente en qué plataformas de las que posees salió cada título.
 - **Múltiples géneros por juego:** asigna y filtra varios géneros o subgéneros híbridos simultáneamente por título.
 - **Estadísticas:** estado de la colección, barras por plataforma, totales, nota media y plataforma favorita.
+- **Sesiones y resumen anual:** registra sesiones con fecha, horas y minutos que suman al total de cada juego; consulta horas, juegos terminados, logros y títulos más jugados por género y plataforma con filtro por año.
+- **Logros y colecciones:** contador opcional de logros/trofeos desbloqueados con porcentaje e insignia automática al 100%, además de colecciones propias asignables a varios juegos y filtrables desde la biblioteca.
 - **Ruleta aleatoria:** elige un juego pendiente al azar, con filtro opcional por plataforma, y empieza a jugar con un toque.
-- **Copias de seguridad:** copia/exporta JSON o CSV y reemplaza la biblioteca desde una copia guardada.
+- **Copias de seguridad:** copia/exporta JSON o CSV (incluyendo sesiones, logros y colecciones), reemplaza la biblioteca desde una copia guardada o reinicia todos los datos para empezar de cero.
 - **PWA:** instalable en iOS y Android con iconos PNG reales (180/192/512), manifiesto web, modo independiente y service worker (Network-First para HTML, caché sin conexión para recursos).
 
 ### Instalación
