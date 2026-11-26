@@ -23,6 +23,10 @@ Your game collection, backlog and played hours in one place. GameVault is a free
 - **Insights:** collection status, per-platform bars, totals, average rating and favorite platform.
 - **Sessions & yearly wrapped:** log dated sessions (hours + minutes) that add up to each game's total; review playtime, finished games, achievements and top titles by genre/platform filtered by year.
 - **Achievements & collections:** optional unlocked/total counters with an automatic 100% badge, plus custom collections assignable to several games and filterable from the library toolbar.
+- **Quick session logging:** start a timed session or log hours and minutes in seconds, added instantly to each game's total.
+- **Gaming Wrapped (yearly recap):** review your year in games with breakdowns by genre, platform and year.
+- **Achievement & trophy tracking:** unlocked/total counters synchronized with the Platinum 100% status and enriched by the metadata scraper.
+- **Custom collections:** build your own shelves, assign games to several of them and filter the library instantly.
 - **Random picker:** pick a pending game at random, optionally filtered by platform, and start playing with one tap.
 - **Backups:** copy/export JSON or CSV (including sessions, achievements and collections), replace the library from a saved backup, or reset all data to start fresh.
 - **PWA:** installable on iOS and Android with real PNG icons (180/192/512), web manifest, standalone display and a service worker (Network-First for HTML, offline cache for assets).
@@ -75,6 +79,10 @@ Tu colección de videojuegos, tu backlog y las horas jugadas en un único lugar.
 - **Estadísticas:** estado de la colección, barras por plataforma, totales, nota media y plataforma favorita.
 - **Sesiones y resumen anual:** registra sesiones con fecha, horas y minutos que suman al total de cada juego; consulta horas, juegos terminados, logros y títulos más jugados por género y plataforma con filtro por año.
 - **Logros y colecciones:** contador opcional de logros/trofeos desbloqueados con porcentaje e insignia automática al 100%, además de colecciones propias asignables a varios juegos y filtrables desde la biblioteca.
+- **Registro rápido de sesiones:** inicia una sesión cronometrada o anota horas y minutos en segundos, sumados al instante al total de cada juego.
+- **Resumen Anual (Gaming Wrapped):** revisa tu año gaming con desgloses por género, plataforma y año.
+- **Contador de logros y trofeos:** contadores de desbloqueados/total sincronizados con el estado Platino 100% y enriquecidos por el scraper.
+- **Colecciones personalizadas:** crea tus propias estanterías, asigna juegos a varias y filtra la biblioteca al instante.
 - **Ruleta aleatoria:** elige un juego pendiente al azar, con filtro opcional por plataforma, y empieza a jugar con un toque.
 - **Copias de seguridad:** copia/exporta JSON o CSV (incluyendo sesiones, logros y colecciones), reemplaza la biblioteca desde una copia guardada o reinicia todos los datos para empezar de cero.
 - **PWA:** instalable en iOS y Android con iconos PNG reales (180/192/512), manifiesto web, modo independiente y service worker (Network-First para HTML, caché sin conexión para recursos).
