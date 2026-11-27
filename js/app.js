@@ -2,6 +2,26 @@
 (function () {
   var STORAGE = window.GVStorage;
   var I = window.GVI18N;
+  /* Fallo real de guardado: storage.js emite `onStorageError` cuando fallan
+     IndexedDB y el almacenamiento alternativo. El aviso es persistente. */
+  (function () {
+    var TEXT = 'Error al guardar los datos en este dispositivo. Exporta un respaldo JSON por seguridad.';
+    function showStorageError(ev) {
+      var el = document.getElementById('storageErrorBanner');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'storageErrorBanner';
+        el.setAttribute('role', 'alert');
+        el.style.cssText = 'position:fixed;left:50%;top:8px;transform:translateX(-50%);max-width:min(92vw,680px);z-index:2147483647;background:#8b1e1e;color:#fff;padding:12px 16px;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.35);font:600 14px/1.4 system-ui,sans-serif;text-align:center';
+        (document.body || document.documentElement).appendChild(el);
+      }
+      el.textContent = (ev && ev.detail && ev.detail.message) || TEXT;
+    }
+    window.addEventListener('onStorageError', showStorageError);
+    if (STORAGE && STORAGE.lastStorageError && STORAGE.lastStorageError()) {
+      showStorageError({ detail: STORAGE.lastStorageError() });
+    }
+  })();
   var CACHE_NAME = 'gamevault-v1.5.1';
   var RELOAD_FLAG = 'gv-cache-reload-v1.5.1';
 
@@ -4175,18 +4195,6 @@
       storageOk = false;
       state.games = sampleGames();
     }
-    /* La migracion a IndexedDB es asincrona: refleja solo cambios reales. */
-    if (STORAGE.whenReady) STORAGE.whenReady().then(function () {
-      var res = STORAGE.load();
-      var games = res && Array.isArray(res.games) ? res.games : [];
-      /* Sin datos ni en localStorage ni en IndexedDB: ahora si se siembra
-         la demo y se guarda, sin riesgo de tapar una biblioteca real. */
-      if (res && res.seeded) { save(); return; }
-      if (JSON.stringify(games) === JSON.stringify(state.games)) return;
-      state.games = games;
-      try { state.collections = STORAGE.loadCollections(); } catch (e) { state.collections = []; }
-      renderAll();
-    }).catch(function () {});
     /* Traducir SIEMPRE, antes que cualquier otra operacion que pueda fallar. */
     window.GVApp.applyTranslations();
     try { initLanguage(); }
@@ -4208,5 +4216,8 @@
     try { autoResolveMissingCovers(); } catch (e) {}
     try { registerServiceWorker(); } catch (e) {}
   }
-  boot();
+  /* IndexedDB es la fuente de verdad: el arranque espera a que initIDB haya
+     migrado desde localStorage (solo si estaba vacío) antes de cargar. */
+  if (STORAGE && STORAGE.whenReady) STORAGE.whenReady().then(boot, boot);
+  else boot();
 })();

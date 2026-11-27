@@ -21,6 +21,30 @@
   var dbPromise = null, idbReady = false, idbFailed = false;
   var initPromise = null, writeChain = Promise.resolve(), memoryBackup = null;
 
+  /* IndexedDB es la única fuente de verdad; `memoryDump` es la copia en memoria
+     del estado persistido para la API síncrona. */
+  var memoryDump = null;
+  var STORAGE_ERROR_MESSAGE = 'Error al guardar los datos en este dispositivo. Exporta un respaldo JSON por seguridad.';
+  var storageErrorHandler = null, lastStorageError = null, storageErrorActive = false;
+
+  function emitStorageError(err, origin) {
+    if (storageErrorActive) return;
+    storageErrorActive = true;
+    lastStorageError = { message: STORAGE_ERROR_MESSAGE, error: err || null, origin: origin || '' };
+    try { if (typeof storageErrorHandler === 'function') storageErrorHandler(lastStorageError); } catch (e) {}
+    try {
+      window.dispatchEvent(new CustomEvent('onStorageError', { detail: lastStorageError }));
+    } catch (e) {
+      try {
+        var ev = document.createEvent('CustomEvent');
+        ev.initCustomEvent('onStorageError', false, false, lastStorageError);
+        window.dispatchEvent(ev);
+      } catch (e2) {}
+    }
+  }
+  function clearStorageError() { storageErrorActive = false; lastStorageError = null; }
+  function persistStatus() { return !lastStorageError && !idbFailed; }
+
   function idbOpen() {
     if (dbPromise) return dbPromise;
     dbPromise = new Promise(function (resolve, reject) {
@@ -60,41 +84,64 @@
   function idbDelete(store, key) {
     return idbOpen().then(function (db) { return idbRequest(db, store, 'readwrite', function (os) { return os.delete(key); }) });
   }
+  var LIGHT_KEYS = [VIEW_KEY, CURRENCY_KEY, 'gamevault-lang'];
+  var HEAVY_KEYS = [KEY, OWNED_KEY, COLLECTIONS_KEY];
+
   function dumpLocal() {
     var dump = {};
     try { MIRROR_KEYS.forEach(function (k) { var v = localStorage.getItem(k); if (v !== null) dump[k] = v; }); } catch (e) {}
     return dump;
   }
-  function restoreLocal(dump) {
-    try {
-      MIRROR_KEYS.forEach(function (k) {
-        if (Object.prototype.hasOwnProperty.call(dump, k)) localStorage.setItem(k, dump[k]);
-        else localStorage.removeItem(k);
-      });
-    } catch (e) {}
+  function dumpMemory() {
+    var out = {};
+    try { LIGHT_KEYS.forEach(function (k) { var v = localStorage.getItem(k); if (v !== null) out[k] = v; }); } catch (e) {}
+    return out;
   }
-  function writeIDB(dump) {
-    writeChain = writeChain.then(function () {
+  function restoreLight(dump) {
+    try { LIGHT_KEYS.forEach(function (k) { if (Object.prototype.hasOwnProperty.call(dump, k)) localStorage.setItem(k, dump[k]); }); } catch (e) {}
+  }
+  function pruneLocalState() {
+    try { HEAVY_KEYS.forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}
+  }
+  function readKey(k) {
+    return (memoryDump && Object.prototype.hasOwnProperty.call(memoryDump, k)) ? memoryDump[k] :
+      (function () { try { return localStorage.getItem(k); } catch (e) { return null; } })();
+  }
+  function writeKey(k, value) {
+    if (!memoryDump) memoryDump = dumpLocal();
+    if (value === null || value === undefined) delete memoryDump[k];
+    else memoryDump[k] = String(value);
+  }
+  function writeIDB() {
+    var dump = memoryDump || dumpMemory();
+    var attempt = writeChain.then(function () {
       return idbPut(STORE_STATE, STATE_KEY, {
         schemaVersion: SCHEMA_VERSION, app: 'gamevault', localStorage: dump,
         updatedAt: new Date().toISOString()
       });
-    }).catch(function () { idbFailed = true; });
-    return writeChain;
+    });
+    writeChain = attempt.catch(function () {});
+    return attempt.then(function () {
+      clearStorageError(); storageOk = true;
+    }, function (e) {
+      idbFailed = true; storageOk = false;
+      emitStorageError(e, 'IndexedDB');
+    });
   }
   function initIDB() {
     if (initPromise) return initPromise;
     initPromise = idbOpen().then(function () { return idbGet(STORE_STATE, STATE_KEY); })
       .then(function (rec) {
-        var local = dumpLocal();
-        if (!rec) { writeIDB(local); return; }
-        var remote = (rec.localStorage && typeof rec.localStorage === 'object') ? rec.localStorage : {};
-        var merged = {}, k;
-        for (k in remote) if (Object.prototype.hasOwnProperty.call(remote, k)) merged[k] = remote[k];
-        for (k in local) if (Object.prototype.hasOwnProperty.call(local, k)) merged[k] = local[k];
-        restoreLocal(merged);
-        writeIDB(merged);
-      }).catch(function () { idbFailed = true; });
+        if (!rec) {
+          /* Migración única: localStorage solo se usa si IndexedDB está vacío. */
+          memoryDump = dumpLocal();
+          restoreLight(memoryDump);
+          return writeIDB().then(function () { pruneLocalState(); });
+        }
+        memoryDump = (rec.localStorage && typeof rec.localStorage === 'object') ? rec.localStorage : {};
+        restoreLight(memoryDump);
+        pruneLocalState();
+      }).catch(function (e) { idbFailed = true; emitStorageError(e, 'IndexedDB (init)'); });
     return initPromise;
   }
   function whenReady() { return initIDB(); }
@@ -164,16 +211,15 @@
   }
   function loadMainCurrency() {
     try {
-      var raw = localStorage.getItem(CURRENCY_KEY);
+      var raw = readKey(CURRENCY_KEY);
       if (raw) return normCurrency(raw, defaultCurrency());
     } catch (e) {}
     return defaultCurrency();
   }
   function saveMainCurrency(value) {
     var code = normCurrency(value, defaultCurrency());
-    try { localStorage.setItem(CURRENCY_KEY, code); storageOk = true; }
-    catch (e) { storageOk = false; }
-    writeIDB(dumpLocal());
+    writeKey(CURRENCY_KEY, code);
+    writeIDB();
     return code;
   }
   /* Convierte un importe entre monedas soportadas; EUR actúa de moneda de puente. */
@@ -490,17 +536,16 @@
   }
 
   function save(games) {
-    try { localStorage.setItem(KEY, JSON.stringify(games)); storageOk = true; }
-    catch (e) { storageOk = false; }
-    writeIDB(dumpLocal());
-    return storageOk;
+    writeKey(KEY, JSON.stringify(games));
+    /* Escritura principal en IndexedDB: no depende del espacio de localStorage. */
+    writeIDB();
+    return persistStatus();
   }
 
   function load() {
     /* Migracion automatica localStorage -> IndexedDB. */
     initIDB();
-    var raw = null;
-    try { raw = localStorage.getItem(KEY); } catch (e) { storageOk = false; }
+    var raw = readKey(KEY);
     if (raw) {
       try {
         var arr = JSON.parse(raw);
@@ -650,8 +695,10 @@
   function clearMemoryBackup() { memoryBackup = null; }
   function restoreMemoryBackup() {
     if (!memoryBackup) return false;
-    restoreLocal(memoryBackup);
-    writeIDB(memoryBackup);
+    memoryDump = memoryBackup;
+    restoreLight(memoryDump);
+    pruneLocalState();
+    writeIDB();
     memoryBackup = null;
     return true;
   }
@@ -659,7 +706,7 @@
   function importJSON(text) {
     var data = JSON.parse(text);
     /* Copia de seguridad en memoria del estado actual antes de importar. */
-    memoryBackup = dumpLocal();
+    memoryBackup = JSON.parse(JSON.stringify(memoryDump || dumpMemory()));
     var check = validateBackup(data);
     if (!check.ok) { var err = new Error(check.msgText); err.msgText = check.msgText; throw err; }
     var arr = Array.isArray(data) ? data : (data && data.games);
@@ -794,7 +841,7 @@
   /* Plataformas/dispositivos del usuario. null = aun no configuro (se asumen todas). */
   function loadOwnedPlatforms() {
     try {
-      var raw = localStorage.getItem(OWNED_KEY);
+      var raw = readKey(OWNED_KEY);
       if (raw == null) return null;
       var arr = JSON.parse(raw);
       if (!Array.isArray(arr)) return null;
@@ -807,13 +854,9 @@
     } catch (e) { return null; }
   }
   function saveOwnedPlatforms(list) {
-    try {
-      if (list === null) localStorage.removeItem(OWNED_KEY);
-      else localStorage.setItem(OWNED_KEY, JSON.stringify(Array.isArray(list) ? list : []));
-      storageOk = true;
-    } catch (e) { storageOk = false; }
-    writeIDB(dumpLocal());
-    return storageOk;
+    writeKey(OWNED_KEY, list === null ? null : JSON.stringify(Array.isArray(list) ? list : []));
+    writeIDB();
+    return persistStatus();
   }
   function isOwnedConfigured() { return loadOwnedPlatforms() !== null; }
 
@@ -852,7 +895,7 @@
      en game.collections para que no haya dos fuentes de verdad. */
   function loadCollections() {
     try {
-      var raw = localStorage.getItem(COLLECTIONS_KEY);
+      var raw = readKey(COLLECTIONS_KEY);
       if (!raw) return [];
       var arr = JSON.parse(raw);
       if (!Array.isArray(arr)) return [];
@@ -866,23 +909,15 @@
     } catch (e) { return []; }
   }
   function saveCollections(list) {
-    try {
-      localStorage.setItem(COLLECTIONS_KEY, JSON.stringify(Array.isArray(list) ? list.map(normalizeCollection) : []));
-      storageOk = true;
-    } catch (e) { storageOk = false; }
-    writeIDB(dumpLocal());
-    return storageOk;
+    writeKey(COLLECTIONS_KEY, JSON.stringify(Array.isArray(list) ? list.map(normalizeCollection) : []));
+    writeIDB();
+    return persistStatus();
   }
   /* Reinicio completo: borra juegos/sesiones/logros/colecciones/consolas/vista
      y devuelve la moneda al valor que corresponde al idioma actual. */
   function resetAll() {
-    try {
-      localStorage.removeItem(KEY);
-      localStorage.removeItem(OWNED_KEY);
-      localStorage.removeItem(VIEW_KEY);
-      localStorage.removeItem(COLLECTIONS_KEY);
-      localStorage.removeItem(CURRENCY_KEY);
-    } catch (e) {}
+    memoryDump = dumpMemory();
+    pruneLocalState();
     var seeded = sample();
     save(seeded);
     saveCollections([]);
@@ -949,6 +984,12 @@
     SCHEMA_VERSION: SCHEMA_VERSION,
     whenReady: whenReady,
     isIndexedDBReady: function () { return idbReady && !idbFailed; },
+    /* Fallo real de persistencia: callback y evento `onStorageError`. */
+    STORAGE_ERROR_MESSAGE: STORAGE_ERROR_MESSAGE,
+    get onStorageError() { return storageErrorHandler; },
+    set onStorageError(fn) { storageErrorHandler = typeof fn === 'function' ? fn : null; },
+    lastStorageError: function () { return lastStorageError; },
+    isStorageHealthy: persistStatus,
     putFile: putFile,
     getFile: getFile,
     listFiles: listFiles,
