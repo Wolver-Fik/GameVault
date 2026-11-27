@@ -3,7 +3,7 @@
 /* v1.5.1: selector de moneda principal visible, divisas globales y DLC sin comprimir.
    Etapa 1: sube la version con cada cambio. activate solo purga CacheStorage;
    nunca borra IndexedDB (gamevault_db) ni localStorage. */
-var CACHE = 'gamevault-v1.5.1';
+var CACHE = 'gamevault-v1.5.2';
 var ROOT = new URL('./', self.registration.scope).href;
 var PRECACHE = [
   './',
@@ -13,6 +13,7 @@ var PRECACHE = [
   './js/i18n.js',
   './js/storage.js',
   './js/scraper.js',
+  './js/ios-install.js',
   './js/app.js',
   './js/i18n/en.js',
   './js/i18n/es.js',

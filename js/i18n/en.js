@@ -2,6 +2,13 @@
 (function () {
   var G = window.GVI18N || (window.GVI18N = { locales: {} });
   G.locales.en = {
+    "install.button": "Install app",
+    "install.guideTitle": "Install on iPhone or iPad",
+    "install.step1": "Tap the Share icon in Safari’s toolbar",
+    "install.step2": "Choose “Add to Home Screen”",
+    "install.close": "Close",
+    "install.buttonAria": "Install app on this device",
+    "install.closeAria": "Close installation guide",
     code: 'en',
     name: 'English',
     'app.tagline': 'COLLECTION • BACKLOG • HOURS',

@@ -2,6 +2,13 @@
 (function () {
   var G = window.GVI18N || (window.GVI18N = { locales: {} });
   G.locales.it = {
+    "install.button": "Installa app",
+    "install.guideTitle": "Installa su iPhone o iPad",
+    "install.step1": "Tocca l’icona Condividi nella barra di Safari",
+    "install.step2": "Scegli «Aggiungi a Home»",
+    "install.close": "Chiudi",
+    "install.buttonAria": "Installa l’app su questo dispositivo",
+    "install.closeAria": "Chiudi la guida all’installazione",
     code: 'it',
     name: 'Italiano',
     'app.tagline': 'COLLEZIONE • DA GIOCARE • ORE',

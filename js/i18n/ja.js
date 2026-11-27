@@ -2,6 +2,13 @@
 (function () {
   var G = window.GVI18N || (window.GVI18N = { locales: {} });
   G.locales.ja = {
+    "install.button": "アプリをインストール",
+    "install.guideTitle": "iPhone または iPad にインストール",
+    "install.step1": "Safari のツールバーで「共有」アイコンをタップ",
+    "install.step2": "「ホーム画面に追加」を選択",
+    "install.close": "閉じる",
+    "install.buttonAria": "このデバイスにアプリをインストール",
+    "install.closeAria": "インストールガイドを閉じる",
     code: 'ja',
     name: '日本語',
     'app.tagline': 'コレクション • プレイ予定 • プレイ時間',
