@@ -10,7 +10,9 @@
     /* elimina de entrada cualquier cache antigua de GameVault para que no se
        sirva una versión previa del selector de plataformas. */
     (function () {
-      var CURRENT = 'gamevault-v1.5.1';
+      /* Debe coincidir con CACHE_NAME (app.js) y CACHE (sw.js): si queda
+         desincronizado, esta purga borra la caché activa en cada carga. */
+      var CURRENT = 'gamevault-v1.5.3';
       if (!('caches' in window)) return;
       try {
         caches.keys().then(function (keys) {

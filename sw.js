@@ -1,9 +1,9 @@
 /* GameVault service worker: Network-First for HTML, Cache-First for assets. */
 /* v1.3.5: filtros de estado en cuadrícula de 2 filas en móvil, sin scroll horizontal. */
-/* v1.5.1: selector de moneda principal visible, divisas globales y DLC sin comprimir.
-   Etapa 1: sube la version con cada cambio. activate solo purga CacheStorage;
-   nunca borra IndexedDB (gamevault_db) ni localStorage. */
-var CACHE = 'gamevault-v1.5.2';
+/* v1.5.3: caché unificada con app.js y escrituras ligadas al evento fetch.
+   activate solo purga CacheStorage; nunca borra IndexedDB (gamevault_db) ni
+   localStorage, y respeta siempre la caché activa del SW actual. */
+var CACHE = 'gamevault-v1.5.3';
 var ROOT = new URL('./', self.registration.scope).href;
 var PRECACHE = [
   './',
@@ -29,36 +29,47 @@ var PRECACHE = [
   './icons/icon-512.png'
 ].map(function (path) { return new URL(path, ROOT).href; });
 
+/* Devuelve una promesa: el evento que la origina decide cuándo termina mediante
+   event.waitUntil(), de modo que ninguna escritura quede fuera de su ciclo de vida. */
 function putInCache(request, response) {
-  if (!response || !response.ok) return;
+  if (!response || !response.ok) return Promise.resolve(false);
   var copy = response.clone();
-  caches.open(CACHE).then(function (cache) {
+  return caches.open(CACHE).then(function (cache) {
     return cache.put(request, copy);
-  }).catch(function () {});
+  }).then(function () { return true; }).catch(function () { return false; });
 }
 
-function networkFirst(request) {
-  return fetch(request).then(function (response) {
-    putInCache(request, response);
-    return response;
+function networkFirst(request, event) {
+  var done = fetch(request).then(function (response) {
+    return putInCache(request, response).then(function () { return response; });
   }).catch(function () {
     return caches.match(request, { ignoreSearch: true }).then(function (hit) {
       return hit || caches.match(new URL('./index.html', ROOT).href);
     });
   });
+  event.waitUntil(done);
+  return done;
 }
 
-function cacheFirst(request) {
-  return caches.match(request, { ignoreSearch: true }).then(function (hit) {
-    if (hit) {
-      fetch(request).then(function (response) { putInCache(request, response); }).catch(function () {});
-      return hit;
-    }
-    return fetch(request).then(function (response) {
-      putInCache(request, response);
-      return response;
+function cacheFirst(request, event) {
+  var lookup = caches.match(request, { ignoreSearch: true });
+  var response = lookup.then(function (hit) {
+    if (hit) return hit;
+    return fetch(request).then(function (res) {
+      return putInCache(request, res).then(function () { return res; });
     });
   });
+  /* Con acierto en caché se responde al instante, pero la revalidación también
+     se registra en el evento: si el SW se cierra, la escritura no se pierde. */
+  var revalidate = lookup.then(function (hit) {
+    if (!hit) return false;
+    return fetch(request).then(function (res) {
+      return putInCache(request, res);
+    }).catch(function () { return false; });
+  });
+  event.waitUntil(response);
+  event.waitUntil(revalidate);
+  return response;
 }
 
 self.addEventListener('install', function (event) {
@@ -99,8 +110,8 @@ self.addEventListener('fetch', function (event) {
     (request.destination === '' && (url.pathname === '/' || /\.html?$/.test(url.pathname)));
 
   if (isHtml) {
-    event.respondWith(networkFirst(request));
+    event.respondWith(networkFirst(request, event));
   } else {
-    event.respondWith(cacheFirst(request));
+    event.respondWith(cacheFirst(request, event));
   }
 });

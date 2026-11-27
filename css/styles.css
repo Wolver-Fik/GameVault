@@ -160,8 +160,8 @@ button { cursor: pointer; }
 .legend em { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
 .legend b { color: var(--fg); font-weight: 600; }
 .bars { display: flex; flex-direction: column; gap: 9px; }
-.bar { display: grid; grid-template-columns: minmax(70px, 130px) minmax(0, 1fr) auto; gap: 10px; align-items: center; font-size: 12px; }
-.bar .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar { display: grid; grid-template-columns: minmax(0, 130px) minmax(0, 1fr) auto; gap: 10px; align-items: center; font-size: 12px; }
+.bar .n { white-space: normal; overflow-wrap: anywhere; }
 .bar .t { height: 6px; border-radius: 4px; background: var(--panel-2); overflow: hidden; }
 .bar .t i { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
 .bar .c { color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -191,7 +191,7 @@ button { cursor: pointer; }
   position: relative;
   border: 0; border-bottom: 2px solid transparent; background: transparent;
   color: var(--muted); padding: 10px 14px; font-weight: 700; font-size: 14px;
-  display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; min-width: 0;
+  display: inline-flex; align-items: center; gap: 8px; min-width: 0;
   transition: color .18s ease, text-shadow .18s ease;
 }
 .view-tab:hover { color: var(--fg); }
@@ -252,9 +252,9 @@ button { cursor: pointer; }
 }
 .console-game-item:hover { border-color: #34405a; background: var(--panel); }
 .console-game-item .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c); flex: none; }
-.console-game-item .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.console-game-item .t { flex: 1 1 auto; min-width: 0; white-space: normal; overflow-wrap: anywhere; font-weight: 600; }
 .console-game-item .h { color: var(--muted); font-size: 12px; flex: none; }
-select.field, select.input { appearance: none; -webkit-appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: calc(100% - 17px) 55%, calc(100% - 12px) 55%; background-size: 5px 5px; background-repeat: no-repeat; padding-right: 38px; min-width: 0; text-overflow: ellipsis; }
+select.field, select.input { appearance: none; -webkit-appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: calc(100% - 17px) 55%, calc(100% - 12px) 55%; background-size: 5px 5px; background-repeat: no-repeat; padding-right: 38px; min-width: 0; text-overflow: clip; }
 /* El desplegable lo dibuja el sistema (iOS Safari / Android Chrome): lo dejamos
    sin transformaciones ni contenedores con overflow que puedan recortarlo. */
 select.input option { background: var(--panel); color: var(--fg); }
@@ -266,7 +266,13 @@ select.input option { background: var(--panel); color: var(--fg); }
 .card { display: flex; flex-direction: column; gap: 10px; min-width: 0; text-align: left; background: none; border: 0; padding: 0; color: inherit; }
 .cover {
   position: relative; aspect-ratio: 3 / 4; max-width: 100%; border-radius: 12px; overflow: hidden;
-  display: flex; align-items: flex-end; padding: 12px; border: 1px solid rgba(255,255,255,.06);
+  /* Esquinas fijas: ejemplo arriba-izquierda, puntuación + trofeo arriba-derecha
+     y plataforma sola abajo-izquierda. Ningún badge fluye: no hay escalones. */
+  --badge-inset: 10px;
+  --badge-gap: 4px;
+  --badge-h: 20px;
+  --score-w: 38px;
+  border: 1px solid rgba(255,255,255,.06);
   transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
 }
 .card:hover .cover, .card:focus-visible .cover {
@@ -275,33 +281,57 @@ select.input option { background: var(--panel); color: var(--fg); }
   box-shadow: 0 12px 26px rgba(0,0,0,.42), 0 0 20px rgba(99,102,241,.28);
 }
 .cover .ini { position: absolute; inset: 0; display: grid; place-items: center; font-size: 54px; font-weight: 800; letter-spacing: -0.04em; color: rgba(255,255,255,.16); }
-.cover .plat { position: relative; flex: 0 1 auto; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; background: rgba(8,10,16,.62); padding: 3px 7px; border-radius: 6px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* El trofeo vive en la portada, enfrente de la plataforma, nunca en el pie de texto. */
-.cover.has-trophy .plat { max-width: calc(100% - 58px); }
-.cover.has-trophy-full .plat { max-width: calc(100% - 74px); }
-.cover .score { position: absolute; top: 10px; right: 10px; background: rgba(8,10,16,.72); border-radius: 8px; padding: 3px 8px; font-weight: 700; font-variant-numeric: tabular-nums; }
+/* La plataforma se ancla sola abajo-izquierda y usa todo el ancho disponible:
+   nunca comparte fila con el trofeo ni empuja el pie de la tarjeta. */
+.cover .plat {
+  position: absolute; left: var(--badge-inset); right: var(--badge-inset); bottom: var(--badge-inset); z-index: 1;
+  width: fit-content; max-width: calc(100% - var(--badge-inset) * 2);
+  font-size: 9px; line-height: 1.25; letter-spacing: 0; text-transform: uppercase;
+  background: rgba(8,10,16,.62); padding: 3px 5px; border-radius: 6px;
+  white-space: nowrap; overflow-wrap: normal; hyphens: none; -webkit-hyphens: none;
+}
+/* Puntuación y trofeo comparten la esquina superior derecha. El trofeo se
+   desplaza exactamente el ancho de la puntuación cuando esta existe (el score
+   precede al trofeo en el DOM), quedando ambos en una sola fila superior. */
+.cover .score {
+  position: absolute; top: var(--badge-inset); right: var(--badge-inset); z-index: 2;
+  box-sizing: border-box; min-width: var(--score-w); height: var(--badge-h);
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(8,10,16,.72); border-radius: 8px; padding: 0 4px;
+  font-size: 9px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
 .cover .score small { color: var(--muted); font-weight: 600; }
 .cover .trophy {
-  position: absolute; right: 12px; bottom: 12px; z-index: 1;
+  position: absolute; top: var(--badge-inset); right: var(--badge-inset); z-index: 2;
+  height: var(--badge-h); margin: 0;
   display: inline-flex; align-items: center; justify-content: center;
-  max-width: calc(100% - 20px); padding: 3px 7px; border-radius: 7px;
+  padding: 0 5px; border-radius: 7px;
   background: rgba(8,10,16,.78); border: 1px solid rgba(255,255,255,.10);
-  color: var(--fg); font-size: 11px; font-weight: 800; line-height: 1.2;
+  color: var(--fg); font-size: 9px; font-weight: 800; line-height: 1;
   font-variant-numeric: tabular-nums; white-space: nowrap; hyphens: none;
 }
+.cover .score ~ .trophy { right: calc(var(--badge-inset) + var(--score-w) + var(--badge-gap)); }
 .cover .trophy.is-full { color: var(--s-plat); border-color: rgba(199,155,255,.48); }
-.cover .ex { position: absolute; top: 10px; left: 10px; background: var(--accent); color: var(--accent-ink); font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 6px; letter-spacing: .04em; text-transform: uppercase; }
+.cover .ex {
+  position: absolute; top: var(--badge-inset); left: var(--badge-inset); z-index: 2;
+  height: var(--badge-h); display: inline-flex; align-items: center;
+  background: var(--accent); color: var(--accent-ink); font-size: 8px; font-weight: 700;
+  padding: 0 4px; border-radius: 6px; letter-spacing: 0; text-transform: uppercase; white-space: nowrap;
+}
 .meta { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.meta .t { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meta .t { font-weight: 650; white-space: normal; overflow-wrap: anywhere; }
 /* Los generos envuelven enteros: nunca se recorta una letra a mitad en tarjetas estrechas. */
 .meta .g { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 4px; color: var(--muted); font-size: 11px; line-height: 1.3; min-width: 0; max-width: 100%; }
-.meta .g .gtag { max-width: 100%; background: var(--panel-2); border-radius: 5px; padding: 1px 5px; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.meta .g .gtag { max-width: 100%; background: var(--panel-2); border-radius: 5px; padding: 1px 5px; line-height: 1.35; white-space: normal; overflow-wrap: anywhere; }
 .meta .g .gsep { display: none; }
-.meta .d { color: var(--muted); font-size: 11px; opacity: .82; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* Pie de tarjeta: una sola linea. Estado (con punto) a la izquierda, horas + boton a la derecha. */
-.row { display: flex; flex-wrap: nowrap; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; max-width: 100%; overflow-wrap: normal; hyphens: none; -webkit-hyphens: none; }
-.card-foot .pill { flex: 0 1 auto; min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; }
-.card-foot .pill > span { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meta .d { color: var(--muted); font-size: 11px; opacity: .82; white-space: normal; overflow-wrap: anywhere; }
+/* Pie de tarjeta: estado completo a la izquierda; horas y "+1h" a la derecha,
+   siempre en una sola fila. margin-top:auto lo ancla abajo aunque el título o
+   los géneros ocupen más alto, nivelando todas las tarjetas de la misma fila. */
+.row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 8px; min-width: 0; max-width: 100%; hyphens: none; -webkit-hyphens: none; }
+.card-foot { margin-top: auto; flex-wrap: nowrap; align-items: center; min-height: 24px; }
+.card-foot .pill { flex: 1 1 auto; min-width: 0; max-width: none; white-space: normal; overflow-wrap: anywhere; }
+.card-foot .pill > span { display: block; min-width: 0; line-height: 1.15; white-space: normal; overflow-wrap: anywhere; }
 .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; color: var(--c); }
 .pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--c); flex: 0 0 7px; }
 .card-actions { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; white-space: nowrap; hyphens: none; -webkit-hyphens: none; }
@@ -430,17 +460,16 @@ textarea.mono { font-family: var(--mono); font-size: 12px; min-height: 200px; }
 .msg { color: var(--muted); font-size: 12px; min-height: 16px; }
 
 /* ---------- v1.3.0: sesiones, logros, colecciones y resumen anual ---------- */
-/* Pestañas con etiqueta corta: nunca se parte una palabra ni se parte el texto
-   a guion en Safari iOS / Chrome Android. */
-.view-tab, .view-tab span, .tabs .tab, .toolbar select.field, .toolbar .col-manage,
-.year-row, .coll-chip, .ach-mini, .subpanel > summary,
+/* Pestañas, etiquetas y valores: si no caben se parten en varias lineas, nunca
+   se recortan con puntos suspensivos ni se parte una palabra a guion. */
+.view-tab, .view-tab span, .tabs .tab, .toolbar .col-manage,
+.year-row, .ach-mini, .subpanel > summary,
 .dlc-pill, .dlc-name, .dlc-hours, .dlc-price, .dlc-add,
-.check-row span, .price-currency, .inv-row .n, .inv-row .c,
+.check-row span, .inv-row .c,
 .stat .v, .stat .v small, .card-actions, .hrs, .dlc-badge {
-  white-space: nowrap; hyphens: none; -webkit-hyphens: none; overflow-wrap: normal;
+  hyphens: none; -webkit-hyphens: none; overflow-wrap: anywhere;
 }
 .view-tab { max-width: 100%; }
-.view-tab span { overflow: hidden; text-overflow: ellipsis; }
 
 /* Secciones plegables dentro de la ficha: el modal sigue compacto hasta que se abren. */
 .subpanel { border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); min-width: 0; }
@@ -464,7 +493,7 @@ textarea.mono { font-family: var(--mono); font-size: 12px; min-height: 200px; }
   background: var(--bg); border-radius: 8px; padding: 6px 8px; font-size: 12px;
 }
 .session-item .sd { color: var(--muted); font-variant-numeric: tabular-nums; flex: none; }
-.session-item .sn { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--fg); }
+.session-item .sn { flex: 1 1 auto; min-width: 0; white-space: normal; overflow-wrap: anywhere; color: var(--fg); }
 .session-item .sh { color: var(--accent); font-weight: 700; flex: none; font-variant-numeric: tabular-nums; }
 .session-item .btn.sm { padding: 3px 7px; flex: none; }
 .ach-body { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: end; }
@@ -480,7 +509,7 @@ textarea.mono { font-family: var(--mono); font-size: 12px; min-height: 200px; }
 .coll-chip {
   border: 1px solid var(--line); background: var(--bg); color: var(--muted);
   border-radius: 999px; padding: 5px 10px; font-size: 12px; font-weight: 600; max-width: 100%;
-  overflow: hidden; text-overflow: ellipsis;
+  white-space: normal; overflow-wrap: anywhere;
 }
 .coll-chip:hover { color: var(--fg); border-color: #34405a; }
 .coll-chip[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
@@ -554,7 +583,7 @@ textarea.mono { font-family: var(--mono); font-size: 12px; min-height: 200px; }
   border: 1px solid var(--c); color: var(--c); border-radius: 999px;
   padding: 2px 7px; font-size: 10px; font-weight: 800; background: rgba(127,140,255,.08);
 }
-.dlc-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--fg); }
+.dlc-name { min-width: 0; white-space: normal; overflow-wrap: anywhere; color: var(--fg); }
 .dlc-hours { color: var(--accent); font-weight: 700; font-variant-numeric: tabular-nums; }
 .dlc-price { color: var(--muted); font-variant-numeric: tabular-nums; }
 .dlc-item .btn.sm { padding: 3px 7px; }
@@ -572,7 +601,7 @@ textarea.mono { font-family: var(--mono); font-size: 12px; min-height: 200px; }
   border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 7px 9px; font-size: 12px;
 }
 .inv-row .rank { color: var(--accent); font-weight: 800; }
-.inv-row .n { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.inv-row .n { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
 .inv-row .c { color: var(--muted); font-variant-numeric: tabular-nums; }
 
 
@@ -626,17 +655,24 @@ textarea.mono { font-family: var(--mono); font-size: 12px; min-height: 200px; }
   .toolbar select.field { width: 100%; max-width: 100%; min-width: 0; flex: none; }
   .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
   .card, .cover, .meta, .row { min-width: 0; max-width: 100%; }
-  .meta .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .meta .t { white-space: normal; }
   .meta .g { white-space: normal; overflow: visible; }
-  .grid .cover { padding: 9px; }
-  .grid .cover .score { top: 8px; right: 8px; }
-  .grid .cover .ex { top: 8px; left: 8px; }
-  .grid .cover .trophy { right: 9px; bottom: 9px; padding: 2px 6px; font-size: 10px; }
-  .grid .cover.has-trophy .plat { max-width: calc(100% - 50px); }
-  .grid .cover.has-trophy-full .plat { max-width: calc(100% - 64px); }
-  .card-foot { gap: 6px; }
-  .card-actions { gap: 4px; }
-  .card-actions .plus { padding: 2px 6px; }
+  .grid .cover {
+    --badge-inset: 8px;
+    --badge-gap: 3px;
+    --badge-h: 18px;
+    --score-w: 34px;
+  }
+  .grid .cover .plat {
+    bottom: 8px; max-width: calc(100% - 16px);
+    font-size: clamp(6px, 2.2vw, 9px); letter-spacing: .02em; padding: 2px 5px;
+  }
+  .grid .cover .score { padding: 0 3px; font-size: 8px; }
+  .grid .cover .trophy { padding: 0 2px; font-size: 8px; }
+  .grid .cover .ex { padding: 0 2px; font-size: 7px; }
+  .card-foot { gap: 4px; }
+  .card-actions { gap: 3px; }
+  .card-actions .plus { padding: 2px 5px; }
   .form { grid-template-columns: minmax(0, 1fr); }
   .pick { flex-direction: column; align-items: flex-start; }
   .modal { padding: 18px; }
@@ -647,9 +683,9 @@ textarea.mono { font-family: var(--mono); font-size: 12px; min-height: 200px; }
   .title-row { flex-wrap: wrap; }
   .title-row .input { flex-basis: 100%; }
   .btn.autofill { width: 100%; justify-content: center; }
-  /* Pestañas: una sola línea, sin guiones partidos ni desbordamiento. */
+  /* Pestañas: etiquetas completas en una o varias lineas, sin guiones partidos. */
   .view-tab { padding: 10px 8px; font-size: 12px; flex: 0 1 auto; }
-  .view-tab span, .tabs .tab, .toolbar select.field, .toolbar .col-manage { white-space: nowrap; hyphens: none; -webkit-hyphens: none; }
+  .tabs .tab, .toolbar .col-manage { hyphens: none; -webkit-hyphens: none; overflow-wrap: anywhere; }
   .toolbar .col-manage { width: 100%; justify-content: center; }
   /* Filtros de estado: 6 píldoras completas en 2 filas de 3, sin scroll lateral. */
   .tabs {
@@ -663,7 +699,7 @@ textarea.mono { font-family: var(--mono); font-size: 12px; min-height: 200px; }
     box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%;
     justify-content: center; text-align: center;
     padding: 8px 6px; font-size: 0.78rem;
-    white-space: nowrap; hyphens: none; -webkit-hyphens: none;
+    white-space: normal; hyphens: none; -webkit-hyphens: none; overflow-wrap: anywhere;
     gap: 4px;
   }
   .tabs .tab .c { font-size: 10px; }
@@ -685,7 +721,7 @@ textarea.mono { font-family: var(--mono); font-size: 12px; min-height: 200px; }
   .coll-row .input { flex-basis: 100%; }
   .coll-row .btn { flex: 1; justify-content: center; }
   .subpanel > summary { font-size: 10px; padding: 9px 10px; }
-  .sub-sum { max-width: 45%; overflow: hidden; text-overflow: ellipsis; }
+  .sub-sum { overflow-wrap: anywhere; text-align: right; }
   /* Etapa 2: formularios y listas de DLC e inversion legibles con una mano. */
   /* En movil la fila del costo pasa a precio + moneda, con el checkbox debajo. */
   .dlc-row-cost { grid-template-columns: minmax(90px, 1fr) 124px; }
@@ -702,47 +738,17 @@ textarea.mono { font-family: var(--mono); font-size: 12px; min-height: 200px; }
   .inv-row .c { font-size: 11px; }
 }
 @media (max-width: 519.98px) {
-  /* Rejilla de 2 columnas: pie de tarjeta en dos lineas limpias.
-     Fila 1: estado completo con su punto (sin ellipsis ni recorte).
-     Fila 2: horas a la izquierda y "+1h" a la derecha.
-     En >= 520px se conserva la fila unica de .row .card-foot. */
-  .card-foot {
-    flex-direction: column;
-    align-items: stretch;
-    justify-content: flex-start;
-    gap: 6px;
-  }
-  .card-foot .pill {
-    width: 100%;
-    max-width: none;
-    overflow: visible;
-    white-space: nowrap;
-  }
-  .card-foot .pill > span {
-    max-width: none;
-    overflow: visible;
-    text-overflow: clip;
-    white-space: nowrap;
-  }
-  .card-foot .card-actions {
-    width: 100%;
-    max-width: 100%;
-    justify-content: space-between;
-  }
+  /* Pie en una sola fila también en móvil: el estado se parte dentro de su
+     píldora antes que bajar horas y "+1h" a una segunda línea. */
+  .card-foot { flex-wrap: nowrap; gap: 4px; }
+  .card-foot .pill { width: auto; max-width: none; font-size: 10px; }
+  .card-foot .card-actions { width: auto; max-width: none; justify-content: flex-end; }
+  .card-foot .hrs { font-size: 11px; }
+  .card-foot .plus { padding: 2px 5px; font-size: 10px; }
 
-  /* El trofeo se mueve a la esquina superior derecha de la portada: debajo
-     del score cuando existe (es hermano anterior en el DOM) o junto a "EJEMPLO"
-     cuando no hay score. Asi la etiqueta de plataforma usa todo el ancho. */
-  .grid .cover .trophy { top: 8px; right: 8px; bottom: auto; }
-  .grid .cover .score ~ .trophy { top: 38px; }
-  .grid .cover .plat,
-  .grid .cover.has-trophy .plat,
-  .grid .cover.has-trophy-full .plat {
-    max-width: 100%;
-    overflow: visible;
-    text-overflow: clip;
-    white-space: normal;
-  }
+  /* La plataforma conserva su ancho útil dentro de la portada, sin invadir
+     los márgenes ni competir con los badges superiores. */
+  .grid .cover .plat { max-width: calc(100% - 16px); }
 }
 
 @media (max-width: 380px) {
@@ -756,6 +762,39 @@ textarea.mono { font-family: var(--mono); font-size: 12px; min-height: 200px; }
 @media (max-width: 359px) {
   .dlc-row-cost { grid-template-columns: minmax(90px, 1fr); }
   .dlc-row-cost .price-currency { width: 100%; min-width: 112px; }
+  /* Ajuste suave de fuente en móvil muy estrecho: caben "PC / STEAM",
+     "NINTENDO SWITCH" y "GAME BOY ADVANCE (GBA)" sin recortes. */
+  .grid .cover {
+    --badge-inset: 6px;
+    --badge-gap: 2px;
+    --badge-h: 16px;
+    --score-w: 28px;
+  }
+  .grid .cover .plat {
+    bottom: 6px; max-width: calc(100% - 12px);
+    font-size: clamp(6px, 2vw, 7px); letter-spacing: 0; padding: 2px 4px;
+  }
+  .grid .cover .score, .grid .cover .trophy, .grid .cover .ex {
+    padding-inline: 2px; font-size: 6.5px;
+  }
+}
+
+@media (max-width: 299px) {
+  .grid .cover {
+    --badge-inset: 4px;
+    --badge-gap: 1px;
+    --badge-h: 14px;
+    --score-w: 23px;
+  }
+  .grid .cover .plat {
+    bottom: 4px; max-width: calc(100% - 8px);
+    font-size: clamp(5px, 1.8vw, 6px); padding: 2px 3px;
+  }
+  .grid .cover .score, .grid .cover .trophy, .grid .cover .ex {
+    padding-inline: 2px; font-size: 5.5px;
+  }
+  .card-foot { align-items: flex-end; }
+  .card-foot .pill { font-size: 9px; line-height: 1.05; }
 }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }

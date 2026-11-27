@@ -20,6 +20,8 @@
   var MIRROR_KEYS = [KEY, OWNED_KEY, VIEW_KEY, COLLECTIONS_KEY, CURRENCY_KEY, 'gamevault-lang'];
   var dbPromise = null, idbReady = false, idbFailed = false;
   var initPromise = null, writeChain = Promise.resolve(), memoryBackup = null;
+  /* GV-04: limite unico de sesiones por juego, compartido con app.js. */
+  var MAX_SESSIONS = 500;
 
   /* IndexedDB es la única fuente de verdad; `memoryDump` es la copia en memoria
      del estado persistido para la API síncrona. */
@@ -43,6 +45,13 @@
     }
   }
   function clearStorageError() { storageErrorActive = false; lastStorageError = null; }
+  function emitStorageRestored() {
+    try {
+      window.dispatchEvent(new CustomEvent('onStorageRestored'));
+    } catch (e) {
+      try { window.dispatchEvent(new Event('onStorageRestored')); } catch (e2) {}
+    }
+  }
   function persistStatus() { return !lastStorageError && !idbFailed; }
 
   function idbOpen() {
@@ -120,20 +129,34 @@
         updatedAt: new Date().toISOString()
       });
     });
+    /* La cadena interna permite reintentar después de un fallo, pero no debe
+       tragarse el rechazo: writeIDB() sigue rechazando si la transacción falla. */
     writeChain = attempt.catch(function () {});
-    return attempt.then(function () {
+    var result = attempt.then(function () {
+      var wasFailed = idbFailed;
+      /* GV-02: una escritura posterior sana el estado, sin esperar recargar. */
+      idbFailed = false;
       clearStorageError(); storageOk = true;
+      if (wasFailed) emitStorageRestored();
+      return true;
     }, function (e) {
       idbFailed = true; storageOk = false;
       emitStorageError(e, 'IndexedDB');
+      throw e;
     });
+    /* Las llamadas fire-and-forget no generan unhandled rejection; quien awaita
+       writeIDB() o usa .catch() recibe el fallo real de IndexedDB. */
+    result.catch(function () {});
+    return result;
   }
   function initIDB() {
     if (initPromise) return initPromise;
     initPromise = idbOpen().then(function () { return idbGet(STORE_STATE, STATE_KEY); })
       .then(function (rec) {
         if (!rec) {
-          /* Migración única: localStorage solo se usa si IndexedDB está vacío. */
+          /* Migración única: localStorage solo se usa si IndexedDB está vacío.
+             Esperamos la confirmación real de la escritura antes de podar: si
+             falla, el localStorage original queda intacto. */
           memoryDump = dumpLocal();
           restoreLight(memoryDump);
           return writeIDB().then(function () { pruneLocalState(); });
@@ -141,7 +164,11 @@
         memoryDump = (rec.localStorage && typeof rec.localStorage === 'object') ? rec.localStorage : {};
         restoreLight(memoryDump);
         pruneLocalState();
-      }).catch(function (e) { idbFailed = true; emitStorageError(e, 'IndexedDB (init)'); });
+      }).catch(function (e) {
+        /* writeIDB ya notificó su error; aquí solo se marca la inicialización. */
+        idbFailed = true; storageOk = false;
+        emitStorageError(e, 'IndexedDB (init)');
+      });
     return initPromise;
   }
   function whenReady() { return initIDB(); }
@@ -166,6 +193,42 @@
     } catch (e) { return fallback; }
   }
   function uid() { return 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+  /* GV-06: los campos numéricos corruptos (NaN/Infinity/texto) se rechazan en el
+     respaldo y se normalizan a un valor seguro al cargar. */
+  function finiteNumber(value, fallback) {
+    var n = Number(value);
+    return isFinite(n) ? n : fallback;
+  }
+  function validNumber(value, min, max) {
+    if (value === undefined || value === null || value === '') return true;
+    var n = Number(value);
+    return isFinite(n) && n >= min && (max === undefined || n <= max);
+  }
+  function hasDuplicateIds(list) {
+    var seen = {};
+    if (!Array.isArray(list)) return false;
+    for (var i = 0; i < list.length; i++) {
+      var item = list[i];
+      if (!item || typeof item !== 'object') continue;
+      var id = item.id == null ? '' : String(item.id);
+      if (!id) continue;
+      var key = '#' + id; /* evita colisiones con claves del prototipo */
+      if (seen[key]) return true;
+      seen[key] = true;
+    }
+    return false;
+  }
+  /* Reparación controlada: si un ID se repite (o choca con otro registro del
+     mismo respaldo) se regenera, sin alterar ningún dato de la partida. */
+  function uniqueId(raw, seen, maxLen) {
+    var id = String(raw == null ? '' : raw).trim().slice(0, maxLen || 80);
+    if (!id) id = uid();
+    if (seen) {
+      while (seen['#' + id]) id = uid();
+      seen['#' + id] = true;
+    }
+    return id;
+  }
 
   /* ---------- monedas y precios (Etapa 2) ----------
      Cada juego/DLC guarda su propia moneda. Para agregar la biblioteca se convierte
@@ -304,13 +367,14 @@
     return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s ? s : '';
   }
   function normMinutes(value) {
-    var n = Math.round(Number(value) || 0);
+    var n = Math.round(finiteNumber(value, 0));
     return n > 0 ? Math.min(n, 100000) : 0;
   }
   function normalizeSession(s) {
     if (!s || typeof s !== 'object') return null;
     var date = validDate(s.date);
-    var minutes = normMinutes(s.minutes != null ? s.minutes : ((Number(s.hours) || 0) * 60));
+    var legacyHours = finiteNumber(s.hours, 0);
+    var minutes = normMinutes(s.minutes != null ? s.minutes : legacyHours * 60);
     if (!date || !minutes) return null;
     return {
       id: String(s.id || uid()).slice(0, 40),
@@ -319,18 +383,20 @@
       note: String(s.note || '').slice(0, 160)
     };
   }
-  function normalizeSessions(value) {
-    var out = [];
+  function normalizeSessions(value, seen) {
+    var out = [], ids = seen || {};
     if (!Array.isArray(value)) return out;
     value.forEach(function (s) {
       var one = normalizeSession(s);
-      if (one && out.length < 500) out.push(one);
+      if (!one || out.length >= MAX_SESSIONS) return;
+      one.id = uniqueId(one.id, ids, 40);
+      out.push(one);
     });
     return out;
   }
   function normalizeAchievements(value) {
-    var total = Math.max(0, Math.round(Number(value && value.total) || 0));
-    var unlocked = Math.max(0, Math.round(Number(value && value.unlocked) || 0));
+    var total = Math.max(0, Math.round(finiteNumber(value && value.total, 0)));
+    var unlocked = Math.max(0, Math.round(finiteNumber(value && value.unlocked, 0)));
     total = Math.min(total, 100000);
     return { unlocked: Math.min(unlocked, total), total: total };
   }
@@ -448,9 +514,9 @@
     });
     return out.slice(0, 50);
   }
-  function normalizeCollection(c) {
+  function normalizeCollection(c, seen) {
     return {
-      id: String(c && c.id || uid()).slice(0, 60),
+      id: uniqueId(c && c.id, seen, 60),
       name: String(c && c.name || '').trim().slice(0, 40)
     };
   }
@@ -459,26 +525,26 @@
      Viven dentro del juego base para que viajen juntos en JSON/CSV y en la copia
      de IndexedDB. No hay expansiones huérfanas ni una segunda fuente de verdad. */
   var DLC_STATUSES = ['pendiente', 'jugando', 'completado', 'platino'];
-  function normalizeDlc(d, currency) {
+  function normalizeDlc(d, currency, seen) {
     if (!d || typeof d !== 'object') return null;
     var title = String(d.title || '').trim().slice(0, 120);
     if (!title) return null;
     var price = normPrice(d.free ? 0 : d.price);
     return {
-      id: String(d.id || uid()).slice(0, 60),
+      id: uniqueId(d.id, seen, 60),
       title: title,
       status: DLC_STATUSES.indexOf(d.status) >= 0 ? d.status : 'pendiente',
-      hours: Math.max(0, Math.round((Number(d.hours) || 0) * 10) / 10),
+      hours: Math.max(0, Math.round(finiteNumber(d.hours, 0) * 10) / 10),
       price: price,
       currency: normCurrency(d.currency, currency || 'EUR'),
       free: price === 0 || !!d.free
     };
   }
-  function normalizeDlcs(value, currency) {
-    var out = [];
+  function normalizeDlcs(value, currency, seen) {
+    var out = [], ids = seen || {};
     if (!Array.isArray(value)) return out;
     value.forEach(function (d) {
-      var one = normalizeDlc(d, currency);
+      var one = normalizeDlc(d, currency, ids);
       if (one && out.length < 40) out.push(one);
     });
     return out;
@@ -489,7 +555,7 @@
     }, 0);
   }
 
-  function normalize(g) {
+  function normalize(g, seen) {
     var rel = splitRelease(g.releaseDate || g.releaseYear || '');
     var genres = genreList(g.genres);
     if (!genres.length) genres = genreList(g.genre);
@@ -500,7 +566,7 @@
       unlocked: g.achUnlocked, total: g.achTotal
     }), status);
     return {
-      id: g.id || uid(),
+      id: uniqueId(g.id, seen, 80),
       title: String(g.title || '').trim().slice(0, 120) || tr('game.untitled', 'Untitled'),
       platform: String(g.platform || '').trim().slice(0, 40),
       /* genres es la fuente de verdad; genre se conserva por retrocompatibilidad. */
@@ -512,16 +578,16 @@
       summary: String(g.summary || '').trim().slice(0, 300),
       sampleSummaryKey: typeof g.sampleSummaryKey === 'string' ? g.sampleSummaryKey.slice(0, 40) : '',
       status: status,
-      hours: Math.max(0, Number(g.hours) || 0),
-      score: (g.score >= 1 && g.score <= 10) ? Math.round(g.score) : null,
+      hours: Math.max(0, finiteNumber(g.hours, 0)),
+      score: (isFinite(Number(g.score)) && Number(g.score) >= 1 && Number(g.score) <= 10) ? Math.round(Number(g.score)) : null,
       notes: String(g.notes || '').slice(0, 600),
       cover: typeof g.cover === 'string' ? g.cover.slice(0, 500000) : '',
       coverSource: typeof g.coverSource === 'string' ? g.coverSource.slice(0, 40) : '',
-      added: Number(g.added) || Date.now(),
-      updated: Number(g.updated) || Date.now(),
+      added: finiteNumber(g.added, Date.now()),
+      updated: finiteNumber(g.updated, Date.now()),
       /* v1.3.0: horas jugadas = horas base + sesiones registradas. `hours` sigue
          siendo el total visible; las sesiones se suman al guardar cada una. */
-      sessions: normalizeSessions(g.sessions),
+      sessions: normalizeSessions(g.sessions, seen),
       achievements: ach,
       collections: normalizeCollectionIds(g.collections),
       completedAt: validDate(g.completedAt),
@@ -529,17 +595,18 @@
       price: price,
       currency: currency,
       free: price === 0 || !!g.free,
-      dlcs: normalizeDlcs(g.dlcs || g.expansions || g.dlc, currency),
+      dlcs: normalizeDlcs(g.dlcs || g.expansions || g.dlc, currency, seen),
       /* Los juegos guardados antes de esta version simplemente reciben campos vacios. */
       example: !!g.example
     };
   }
 
   function save(games) {
+    /* 1) Actualización en memoria: la interfaz sigue respondiendo al instante. */
     writeKey(KEY, JSON.stringify(games));
-    /* Escritura principal en IndexedDB: no depende del espacio de localStorage. */
-    writeIDB();
-    return persistStatus();
+    /* 2) Confirmación en disco: se resuelve solo cuando IndexedDB confirma.
+       El estado en memoria NO se presenta como persistencia garantizada. */
+    return writeIDB().then(function () { return true; }, function () { return false; });
   }
 
   function load() {
@@ -550,9 +617,9 @@
       try {
         var arr = JSON.parse(raw);
         if (Array.isArray(arr)) {
-          var games = [];
+          var games = [], seenIds = {};
           arr.forEach(function (item) {
-            try { games.push(normalize(item)); } catch (e) { /* descarta entradas corruptas */ }
+            try { games.push(normalize(item, seenIds)); } catch (e) { /* descarta entradas corruptas */ }
           });
           if (games.length) {
             /* Migración en sitio: rellena los trofeos de la demo ya guardada. */
@@ -663,6 +730,14 @@
         CURRENCIES.indexOf(String(data.mainCurrency || '').toUpperCase()) === -1) {
       return { ok: false, msgText: 'La moneda principal del respaldo no es compatible.' };
     }
+    /* GV-06: un ID repetido une a dos registros distintos. Se rechaza el
+       archivo en lugar de regenerar IDs en silencio y perder asociaciones. */
+    if (hasDuplicateIds(arr)) {
+      return { ok: false, msgText: 'El respaldo contiene juegos con IDs duplicados. No se importó para no mezclar datos.' };
+    }
+    if (envelope && Array.isArray(data.collections) && hasDuplicateIds(data.collections)) {
+      return { ok: false, msgText: 'El respaldo contiene colecciones con IDs duplicados. No se importó para no mezclar datos.' };
+    }
     if (Array.isArray(arr)) {
       for (var i = 0; i < arr.length; i++) {
         var g = arr[i];
@@ -671,11 +746,49 @@
             (!isFinite(Number(g.price)) || Number(g.price) < 0)) {
           return { ok: false, msgText: 'El respaldo contiene un precio no válido.' };
         }
+        /* Campos numéricos de juegos y logros: NaN/Infinity adulteran las
+           estadísticas anuales y el cálculo de inversión. */
+        if (!validNumber(g.hours, 0) || !validNumber(g.added, 0) || !validNumber(g.updated, 0)) {
+          return { ok: false, msgText: 'El respaldo contiene horas o fechas de juego no válidas.' };
+        }
+        if (!validNumber(g.achUnlocked, 0) || !validNumber(g.achTotal, 0)) {
+          return { ok: false, msgText: 'El respaldo contiene logros no válidos.' };
+        }
+        if (g.achievements && typeof g.achievements === 'object' &&
+            (!validNumber(g.achievements.unlocked, 0) || !validNumber(g.achievements.total, 0))) {
+          return { ok: false, msgText: 'El respaldo contiene logros no válidos.' };
+        }
+        if (g.score !== undefined && g.score !== null && g.score !== '' &&
+            (!isFinite(Number(g.score)) || Number(g.score) < 1 || Number(g.score) > 10)) {
+          return { ok: false, msgText: 'El respaldo contiene una nota no válida.' };
+        }
+        /* GV-04: más de 500 sesiones por juego se rechaza con aviso; nunca se
+           recortan en silencio durante la importación. */
+        var sessions = g.sessions;
+        if (sessions !== undefined && !Array.isArray(sessions)) {
+          return { ok: false, msgText: 'El respaldo contiene sesiones no válidas.' };
+        }
+        if (Array.isArray(sessions)) {
+          if (sessions.length > MAX_SESSIONS) {
+            return { ok: false, msgText: 'El respaldo supera el límite de 500 sesiones por juego. No se importó nada.' };
+          }
+          if (hasDuplicateIds(sessions)) {
+            return { ok: false, msgText: 'El respaldo contiene sesiones con IDs duplicados. No se importó para no mezclar datos.' };
+          }
+          for (var k = 0; k < sessions.length; k++) {
+            if (!normalizeSession(sessions[k])) {
+              return { ok: false, msgText: 'El respaldo contiene una sesión con fecha o duración no válida.' };
+            }
+          }
+        }
         var list = g.dlcs !== undefined ? g.dlcs : (g.expansions !== undefined ? g.expansions : g.dlc);
         if (list !== undefined && !Array.isArray(list)) {
           return { ok: false, msgText: 'El respaldo contiene DLC no válidos.' };
         }
         if (Array.isArray(list)) {
+          if (hasDuplicateIds(list)) {
+            return { ok: false, msgText: 'El respaldo contiene DLC con IDs duplicados. No se importó para no mezclar datos.' };
+          }
           for (var j = 0; j < list.length; j++) {
             var d = list[j];
             if (!d || typeof d !== 'object' || !String(d.title || '').trim()) {
@@ -684,6 +797,9 @@
             if (d.price !== undefined && d.price !== null &&
                 (!isFinite(Number(d.price)) || Number(d.price) < 0)) {
               return { ok: false, msgText: 'El respaldo contiene un precio de DLC no válido.' };
+            }
+            if (!validNumber(d.hours, 0)) {
+              return { ok: false, msgText: 'El respaldo contiene horas de DLC no válidas.' };
             }
           }
         }
@@ -697,8 +813,9 @@
     if (!memoryBackup) return false;
     memoryDump = memoryBackup;
     restoreLight(memoryDump);
-    pruneLocalState();
-    writeIDB();
+    /* Como en la migración inicial: solo se poda localStorage si el respaldo
+       en IndexedDB se confirmó; si falla, el original sigue disponible. */
+    writeIDB().then(function () { pruneLocalState(); }, function () {});
     memoryBackup = null;
     return true;
   }
@@ -711,20 +828,25 @@
     if (!check.ok) { var err = new Error(check.msgText); err.msgText = check.msgText; throw err; }
     var arr = Array.isArray(data) ? data : (data && data.games);
     if (!Array.isArray(arr)) throw new Error('formato');
-    var cols = Array.isArray(data.collections) ? data.collections.map(normalizeCollection) : [];
+    /* Un único conjunto de IDs para juegos, sesiones, DLC y colecciones: la
+       normalización repara cualquier choque residual con uid() controlados. */
+    var seenIds = {};
+    var cols = Array.isArray(data.collections) ? data.collections.map(function (c) {
+      return normalizeCollection(c, seenIds);
+    }) : [];
     /* En backups planos las colecciones se reconstruyen desde los juegos. */
     if (!cols.length) {
       var names = {};
       arr.forEach(function (g) {
         normalizeCollectionIds(g && g.collections).forEach(function (id) {
-          if (!names[id]) names[id] = normalizeCollection({ id: id, name: id });
+          if (!names[id]) names[id] = normalizeCollection({ id: id, name: id }, seenIds);
         });
       });
       Object.keys(names).forEach(function (k) { cols.push(names[k]); });
     }
     /* Se mantiene hasta que app.js termina de aplicar la importacion. */
     return {
-      games: arr.map(normalize),
+      games: arr.map(function (g) { return normalize(g, seenIds); }),
       collections: cols,
       mainCurrency: (data && data.mainCurrency) ? normCurrency(data.mainCurrency, loadMainCurrency()) : loadMainCurrency()
     };
@@ -739,8 +861,17 @@
 
   function csvCell(v) {
     var s = v == null ? '' : String(v);
+    /* GV-07: Excel/Sheets ejecutan celdas que empiezan por estos caracteres.
+       El apóstrofo fuerza texto en la hoja SIN tocar g, memoryDump ni IndexedDB. */
+    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
     if (/[",\n\r]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
     return s;
+  }
+  /* Al reimportar se retira únicamente el apóstrofo añadido por csvCell(), para
+     que el valor original no cambie tras un export/import de ida y vuelta. */
+  function cleanCSVField(s) {
+    s = s == null ? '' : String(s);
+    return /^'[=+\-@\t\r]/.test(s) ? s.slice(1) : s;
   }
   function toCSV(games, collections) {
     var names = {};
@@ -777,13 +908,13 @@
           else quoted = false;
         } else field += ch;
       } else if (ch === '"') quoted = true;
-      else if (ch === ',') { row.push(field); field = ''; }
+      else if (ch === ',') { row.push(cleanCSVField(field)); field = ''; }
       else if (ch === '\n' || ch === '\r') {
         if (ch === '\r' && s.charAt(i + 1) === '\n') i++;
-        row.push(field); rows.push(row); row = []; field = '';
+        row.push(cleanCSVField(field)); rows.push(row); row = []; field = '';
       } else field += ch;
     }
-    if (field || row.length) { row.push(field); rows.push(row); }
+    if (field || row.length) { row.push(cleanCSVField(field)); rows.push(row); }
     return rows.filter(function (r) { return r.some(function (v) { return String(v).trim(); }); });
   }
 
@@ -792,35 +923,43 @@
     if (rows.length < 2) throw new Error('formato');
     var head = rows[0].map(function (h) { return h.trim(); });
     if (head.indexOf('title') === -1) throw new Error('formato');
-    var collections = [];
+    function rawGame(r) {
+      var g = {};
+      head.forEach(function (h, i) { g[h] = r[i] == null ? '' : r[i]; });
+      var sessions = [], dlcs = [];
+      try { sessions = JSON.parse(g.sessions || '[]'); } catch (e) { sessions = []; }
+      try { dlcs = JSON.parse(g.dlcs || '[]'); } catch (e) { dlcs = []; }
+      return {
+        id: g.id, title: g.title, platform: g.platform, genres: (g.genres || '').split('|'),
+        releaseDate: g.releaseDate, developer: g.developer, summary: g.summary,
+        status: g.status, hours: g.hours, score: g.score, notes: g.notes, cover: g.cover,
+        added: g.added, updated: g.updated, sessions: sessions,
+        achievements: { unlocked: g.achUnlocked, total: g.achTotal },
+        collections: String(g.collections || '').split('|').filter(Boolean),
+        completedAt: g.completedAt,
+        price: g.price, currency: g.currency, free: g.free === '1' || g.free === 'true',
+        dlcs: dlcs
+      };
+    }
+    /* El CSV pasa por las MISMAS reglas que el JSON: IDs duplicados, sesiones
+       fuera del límite y campos numéricos corruptos se rechazan con aviso. */
+    var raw = rows.slice(1).map(rawGame);
+    var check = validateBackup({ app: 'GameVault', schemaVersion: SCHEMA_VERSION, games: raw, collections: [] });
+    if (!check.ok) { var err = new Error(check.msgText); err.msgText = check.msgText; throw err; }
+    var seenIds = {}, collections = [];
     function collectionId(name) {
       var n = String(name || '').trim().slice(0, 40);
       if (!n) return '';
       for (var i = 0; i < collections.length; i++) {
         if (collections[i].name.toLowerCase() === n.toLowerCase()) return collections[i].id;
       }
-      var c = normalizeCollection({ name: n });
+      var c = normalizeCollection({ name: n }, seenIds);
       collections.push(c);
       return c.id;
     }
-    var games = rows.slice(1).map(function (r) {
-      var g = {};
-      head.forEach(function (h, i) { g[h] = r[i] == null ? '' : r[i]; });
-      var sessions = [];
-      try { sessions = JSON.parse(g.sessions || '[]'); } catch (e) { sessions = []; }
-      return normalize({
-        id: g.id, title: g.title, platform: g.platform, genres: (g.genres || '').split('|'),
-        releaseDate: g.releaseDate, developer: g.developer, summary: g.summary,
-        status: g.status, hours: g.hours, score: g.score, notes: g.notes, cover: g.cover,
-        added: g.added, updated: g.updated, sessions: sessions,
-        achievements: { unlocked: g.achUnlocked, total: g.achTotal },
-        collections: String(g.collections || '').split('|').map(collectionId).filter(Boolean),
-        completedAt: g.completedAt,
-        price: g.price, currency: g.currency, free: g.free === '1' || g.free === 'true',
-        dlcs: (function () {
-          try { return JSON.parse(g.dlcs || '[]'); } catch (e) { return []; }
-        })()
-      });
+    var games = raw.map(function (g) {
+      g.collections = g.collections.map(collectionId);
+      return normalize(g, seenIds);
     });
     return {
       games: games, collections: collections,
@@ -899,9 +1038,9 @@
       if (!raw) return [];
       var arr = JSON.parse(raw);
       if (!Array.isArray(arr)) return [];
-      var out = [], seen = {};
+      var out = [], seen = {}, seenIds = {};
       arr.forEach(function (c) {
-        var one = normalizeCollection(c);
+        var one = normalizeCollection(c, seenIds);
         var key = one.name.toLowerCase();
         if (one.name && !seen[key]) { seen[key] = true; out.push(one); }
       });
@@ -941,6 +1080,7 @@
     PC_LAUNCHER_KEYS: PC_LAUNCHER_KEYS,
     PLATFORM_KEYS: PLATFORM_KEYS,
     GENRE_KEYS: GENRE_KEYS,
+    MAX_SESSIONS: MAX_SESSIONS,
     uid: uid,
     splitRelease: splitRelease,
     genreList: genreList,

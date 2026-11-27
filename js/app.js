@@ -16,14 +16,25 @@
         (document.body || document.documentElement).appendChild(el);
       }
       el.textContent = (ev && ev.detail && ev.detail.message) || TEXT;
+      storageOk = false;
+      try { renderNotes(); } catch (e) {}
     }
     window.addEventListener('onStorageError', showStorageError);
+    window.addEventListener('onStorageRestored', function () {
+      var el = document.getElementById('storageErrorBanner');
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+      storageOk = (STORAGE && STORAGE.isStorageHealthy) ? STORAGE.isStorageHealthy() : true;
+      try { renderNotes(); } catch (e) {}
+    });
     if (STORAGE && STORAGE.lastStorageError && STORAGE.lastStorageError()) {
       showStorageError({ detail: STORAGE.lastStorageError() });
     }
   })();
-  var CACHE_NAME = 'gamevault-v1.5.1';
-  var RELOAD_FLAG = 'gv-cache-reload-v1.5.1';
+  var CACHE_NAME = 'gamevault-v1.5.3';
+  var CACHE_VERSION = '1.5.3';
+  var RELOAD_FLAG = 'gv-cache-reload-v1.5.3';
+  /* GV-04: mismo tope que storage.js, usado por el formulario y por +1h. */
+  var MAX_SESSIONS = (STORAGE && STORAGE.MAX_SESSIONS) || 500;
 
   function t(key, vars) {
     if (!I || typeof I.t !== 'function') return String(key);
@@ -686,7 +697,21 @@
   /* ---------- almacenamiento ---------- */
   function save() {
     if (!STORAGE || typeof STORAGE.save !== 'function') { storageOk = false; return false; }
-    storageOk = STORAGE.save(state.games);
+    var result = STORAGE.save(state.games);
+    if (result && typeof result.then === 'function') {
+      /* La memoria ya está actualizada; el estado de guardado se confirma cuando
+         IndexedDB responde. El banner/error se refresca en ese momento. */
+      result.then(function (ok) {
+        storageOk = !!ok;
+        renderNotes();
+      }, function () {
+        storageOk = false;
+        renderNotes();
+      });
+      storageOk = STORAGE.isStorageHealthy ? STORAGE.isStorageHealthy() : true;
+      return storageOk;
+    }
+    storageOk = !!result;
     return storageOk;
   }
   function load() {
@@ -2598,11 +2623,27 @@
       '<span class="c">' + esc(detail) + '</span></div>';
   }
   function yearOf(date) { return /^(\d{4})-/.exec(String(date || '')) ? String(date).slice(0, 4) : ''; }
+  /* Unico criterio de "juegos terminados" para la tarjeta superior y la barra
+     "Por año": completado/platino (o trofeos al 100%) por año de finalización.
+     completedAt se guarda también cuando las horas se cargaron a mano, así que
+     esos juegos cuentan aunque no tengan ninguna sesión fechada. */
+  function finishedGamesOfYear(y) {
+    return state.games.filter(function (g) {
+      if (!(g.status === 'completado' || is100(g))) return false;
+      if (!y) return true;
+      var doneYear = yearOf(g.completedAt);
+      if (doneYear) return doneYear === y;
+      /* Datos heredados sin fecha de fin: se adscriben al año de su última sesión. */
+      var sessionYears = (g.sessions || []).map(function (s) { return yearOf(s.date); })
+        .filter(Boolean).sort();
+      return sessionYears.length ? sessionYears[sessionYears.length - 1] === y : false;
+    });
+  }
 
-  /* Resumen anual: g.hours ya incluye las sesiones registradas, así que se
-     usa como total de cada juego sin sumarlas dos veces. Los juegos sin sesión
-     también cuentan: "Más jugados", "Por género" y "Por plataforma" deben
-     reflejar siempre las horas de la biblioteca cargada. */
+  /* Resumen anual (GV-03): al elegir un año, horas, juegos más jugados,
+     distribución y comparativa se calculan SOLO con sesiones fechadas en ese
+     año. Las horas manuales/DLC se muestran aparte, nunca mezcladas en el total.
+     Sin filtro se conserva el total histórico de la biblioteca. */
   function renderWrapped() {
     var years = {}, sessions = [];
     state.games.forEach(function (g) {
@@ -2626,30 +2667,51 @@
     }
     var use = state.wrappedYear ? sessions.filter(function (s) { return s.y === state.wrappedYear; }) : sessions;
     var minutes = use.reduce(function (a, s) { return a + s.minutes; }, 0);
-    /* Sin filtro de año: toda la biblioteca. Con año: juegos con sesión o con
-       finalización en ese año (incluidos los que no registraron sesiones). */
-    function gamesOfYear(y) {
-      return state.games.filter(function (g) {
-        if (!y) return true;
-        if (yearOf(g.completedAt) === y) return true;
-        return (g.sessions || []).some(function (s) { return yearOf(s.date) === y; });
+    /* Las horas del año salen de `sessions`, nunca de g.hours (totales
+       globales); los juegos terminados usan finishedGamesOfYear(). */
+    var active, hours = 0, manual = 0;
+    var byGame = {}, byGenre = {}, byPlat = {};
+    function addGame(id, g, mins) {
+      if (!byGame[id]) byGame[id] = { title: g.title, minutes: 0 };
+      byGame[id].minutes += mins;
+      var genre = displayValue('g', primaryGenre(g)) || t('card.noGenre');
+      byGenre[genre] = (byGenre[genre] || 0) + mins;
+      var plat = displayValue('p', g.platform) || t('card.noPlatform');
+      byPlat[plat] = (byPlat[plat] || 0) + mins;
+    }
+    if (state.wrappedYear) {
+      hours = minutes / 60;
+      var seen = {};
+      active = [];
+      use.forEach(function (s) {
+        var g = s.g, id = g.id || g.title;
+        if (!seen[id]) { seen[id] = true; active.push(g); }
+        addGame(id, g, s.minutes);
+      });
+      /* Lo que no está respaldado por una sesión fechada se informa aparte. */
+      manual = active.reduce(function (a, g) {
+        return a + Math.max(0, totalGameHours(g) - sessionHours(g.sessions));
+      }, 0);
+    } else {
+      active = state.games;
+      active.forEach(function (g) {
+        var h = totalGameHours(g);
+        hours += h;
+        addGame(g.id || g.title, g, h * 60);
       });
     }
-    var active = gamesOfYear(state.wrappedYear);
-    var hours = active.reduce(function (a, g) { return a + totalGameHours(g); }, 0);
-    var finished = active.filter(function (g) { return g.status === 'completado' || is100(g); });
-    var perfect = active.filter(is100);
-    var byGame = {}, byGenre = {}, byPlat = {};
-    active.forEach(function (g) {
-      var id = g.id || g.title;
-      var h = totalGameHours(g);
-      if (!byGame[id]) byGame[id] = { title: g.title, hours: 0 };
-      byGame[id].hours += h;
-      var genre = displayValue('g', primaryGenre(g)) || t('card.noGenre');
-      byGenre[genre] = (byGenre[genre] || 0) + h;
-      var plat = displayValue('p', g.platform) || t('card.noPlatform');
-      byPlat[plat] = (byPlat[plat] || 0) + h;
+    function toHours(map) {
+      var out = {};
+      Object.keys(map).forEach(function (k) { out[k] = map[k] / 60; });
+      return out;
+    }
+    var genreHours = toHours(byGenre), platHours = toHours(byPlat), gameHoursMap = {};
+    Object.keys(byGame).forEach(function (k) {
+      var title = byGame[k].title;
+      gameHoursMap[title] = (gameHoursMap[title] || 0) + byGame[k].minutes / 60;
     });
+    var finished = finishedGamesOfYear(state.wrappedYear);
+    var perfect = finished.filter(is100);
     function bars(box, map) {
       if (!box) return;
       var keys = Object.keys(map).sort(function (a, b) { return map[b] - map[a] || a.localeCompare(b, localeTag()); });
@@ -2663,28 +2725,26 @@
       }).join('');
     }
     $('w-hours').innerHTML = esc(fmtNum(hours)) + '<small>h</small>';
-    $('w-hours-s').textContent = t('wrapped.sessionTotal', { n: use.length });
+    var hoursDetail = t(use.length === 1 ? 'wrapped.sessionTotal.one' : 'wrapped.sessionTotal', { n: use.length });
+    if (state.wrappedYear && manual > 0.004) hoursDetail += ' · ' + t('wrapped.manualHours', { h: fmtNum(manual) });
+    $('w-hours-s').textContent = hoursDetail;
     $('w-finished').textContent = finished.length;
     $('w-finished-s').textContent = t('wrapped.perfectTotal', { n: perfect.length });
     $('w-sessions').textContent = use.length;
     $('w-sessions-s').textContent = t('wrapped.minutesTotal', { n: Math.round(minutes) });
     $('w-perfect').textContent = perfect.length;
     $('w-perfect-s').textContent = t('wrapped.achievementsDone');
-    bars($('w-top'), (function () {
-      var m = {};
-      Object.keys(byGame).forEach(function (k) { m[byGame[k].title] = byGame[k].hours; });
-      return m;
-    })());
-    bars($('w-genres'), byGenre);
-    bars($('w-plats'), byPlat);
+    bars($('w-top'), gameHoursMap);
+    bars($('w-genres'), genreHours);
+    bars($('w-plats'), platHours);
     var ybox = $('w-years');
     if (ybox) {
       var perYear = listYears.map(function (y) {
-        var group = gamesOfYear(y);
+        var yearMinutes = sessions.reduce(function (a, s) { return s.y === y ? a + s.minutes : a; }, 0);
         return {
           y: y,
-          hours: group.reduce(function (a, g) { return a + totalGameHours(g); }, 0),
-          fin: group.filter(function (g) { return g.status === 'completado' || is100(g); }).length
+          hours: yearMinutes / 60,
+          fin: finishedGamesOfYear(y).length
         };
       });
       var maxYear = perYear.reduce(function (a, r) { return Math.max(a, r.hours); }, 0);
@@ -2897,6 +2957,8 @@
     var mins = Math.max(0, Math.floor(parseFloat($('s-mins').value) || 0));
     var minutes = Math.min(100000, hours * 60 + mins);
     if (!minutes) { showFlash(t('session.errDuration')); return; }
+    /* GV-04: el tope se comprueba antes de tocar el formulario ni las horas. */
+    if (editSessions.length >= MAX_SESSIONS) { showFlash(t('session.limit')); return; }
     editSessions.unshift({
       id: uid(), date: date, minutes: minutes,
       note: String($('s-note').value || '').trim().slice(0, 120)
@@ -2937,7 +2999,11 @@
   function logHour(id) {
     state.games.forEach(function (g) {
       if (g.id !== id) return;
-      g.sessions = Array.isArray(g.sessions) ? g.sessions.slice(0, 499) : [];
+      if ((Array.isArray(g.sessions) ? g.sessions.length : 0) >= MAX_SESSIONS) {
+        showFlash(t('session.limit'));
+        return;
+      }
+      g.sessions = Array.isArray(g.sessions) ? g.sessions.slice() : [];
       g.sessions.unshift({ id: uid(), date: todayISO(), minutes: 60, note: '' });
       g.hours = Math.max(0, g.hours + 1);
       g.updated = Date.now();
@@ -4128,11 +4194,22 @@
   }
 
   /* ---------- PWA: service worker y purga de cache ---------- */
+  /* Si todavía controla un SW de otra versión, su caché sigue siendo la activa:
+     no se toca hasta que el SW actual tome el control (vía reloadClean). */
+  function controlledByCurrentSW() {
+    try {
+      var c = navigator.serviceWorker && navigator.serviceWorker.controller;
+      if (!c) return true;
+      return String(c.scriptURL || '').indexOf('v=' + CACHE_VERSION) !== -1;
+    } catch (e) { return false; }
+  }
   function purgeOldCaches() {
     if (!('caches' in window)) return Promise.resolve(false);
+    if (!controlledByCurrentSW()) return Promise.resolve(false);
     try {
       return caches.keys().then(function (keys) {
         var old = keys.filter(function (key) {
+          /* CACHE_NAME es la caché del SW actual: jamás se elimina aquí. */
           return /^gamevault-/.test(key) && key !== CACHE_NAME;
         });
         if (!old.length) return false;
@@ -4155,7 +4232,7 @@
     navigator.serviceWorker.addEventListener('controllerchange', reloadClean);
     purgeOldCaches().then(function (purged) {
       /* La query fuerza al navegador a descargar el SW nuevo sin usar su HTTP cache. */
-      return navigator.serviceWorker.register('./sw.js?v=1.5.1', { scope: './' })
+      return navigator.serviceWorker.register('./sw.js?v=1.5.3', { scope: './' })
         .then(function (registration) {
           if (purged) setTimeout(reloadClean, 200);
           return registration.update();
