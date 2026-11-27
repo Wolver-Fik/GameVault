@@ -2,8 +2,8 @@
 (function () {
   var STORAGE = window.GVStorage;
   var I = window.GVI18N;
-  var CACHE_NAME = 'gamevault-v1.4.0';
-  var RELOAD_FLAG = 'gv-cache-reload-v1.4.0';
+  var CACHE_NAME = 'gamevault-v1.5.1';
+  var RELOAD_FLAG = 'gv-cache-reload-v1.5.1';
 
   function t(key, vars) {
     if (!I || typeof I.t !== 'function') return String(key);
@@ -174,6 +174,9 @@
   var editSessions = [];
   var editAch = { unlocked: 0, total: 0 };
   var editCollections = [];
+  /* Etapa 2: borrador de expansiones de la ficha abierta. */
+  var editDlcs = [];
+  var mainCurrency = 'EUR';
   var delCollectionId = null;
 
   var $ = function (id) { return document.getElementById(id); };
@@ -668,6 +671,8 @@
     catch (e) { state.collections = []; }
     try { ownedPlatforms = STORAGE.loadOwnedPlatforms ? STORAGE.loadOwnedPlatforms() : null; }
     catch (e) { ownedPlatforms = null; }
+    try { mainCurrency = STORAGE.getMainCurrency ? STORAGE.getMainCurrency() : 'EUR'; }
+    catch (e) { mainCurrency = 'EUR'; }
   }
 
   /* ---------- portadas y metadatos: Wikipedia / Wikidata (CORS con origin=*) ---------- */
@@ -2138,7 +2143,7 @@
   /* ---------- render ---------- */
   function renderStats() {
     var G = state.games, n = G.length;
-    var hours = G.reduce(function (a, g) { return a + gameHours(g); }, 0);
+    var hours = G.reduce(function (a, g) { return a + totalGameHours(g); }, 0);
     var done = G.filter(function (g) { return g.status === 'completado' || g.status === 'platino'; }).length;
     var plat = G.filter(function (g) { return g.status === 'platino'; }).length;
     var pend = G.filter(function (g) { return g.status === 'pendiente'; }).length;
@@ -2160,7 +2165,7 @@
       var k = keyOf('p', g.platform) || '';
       var name = k ? displayValue('p', k) : t('card.noPlatform');
       if (!P[name]) P[name] = { n: 0, h: 0 };
-      P[name].n++; P[name].h += gameHours(g);
+      P[name].n++; P[name].h += totalGameHours(g);
     });
     var arr = Object.keys(P).map(function (k) { return { name: k, n: P[k].n, h: P[k].h }; })
       .sort(function (a, b) { return b.n - a.n || b.h - a.h; });
@@ -2336,10 +2341,12 @@
         coverHtml(g, 'cover', true) +
         '<div class="meta"><span class="t" title="' + esc(g.title) + '">' + esc(g.title) + '</span>' +
         genreTagsHtml(g) +
+        (dlcCount(g) ? '<span class="dlc-badge" title="' + esc(t('card.dlcCount', { n: dlcCount(g) })) + '">' +
+          esc(t('card.dlcShort', { n: dlcCount(g) })) + '</span>' : '') +
         (detail ? '<span class="d" title="' + esc(detail) + '">' + esc(detail) + '</span>' : '') + '</div>' +
       '</button>' +
       '<div class="row card-foot"><span class="pill" style="--c:' + st.color + '" title="' + esc(statusLabel(st)) + '"><span>' + esc(statusLabel(st)) + '</span></span>' +
-      '<span class="card-actions"><span class="hrs num">' + fmtNum(g.hours) + 'h</span>' +
+      '<span class="card-actions"><span class="hrs num">' + fmtNum(totalGameHours(g)) + 'h</span>' +
       '<button class="plus" type="button" data-hour="' + g.id + '" aria-label="' + esc(t('card.addHourAria', { title: g.title })) + '">+1h</button></span></div>' +
     '</div>';
   }
@@ -2431,6 +2438,92 @@
   function gameHours(g) {
     return Math.max(Math.max(0, Number(g && g.hours) || 0), sessionHours(g && g.sessions));
   }
+  /* Etapa 2: las horas de las expansiones se suman a las del juego base para
+     todas las estadísticas globales (colección y resumen anual). */
+  function dlcHours(g) {
+    return ((g && Array.isArray(g.dlcs)) ? g.dlcs : []).reduce(function (a, d) {
+      return a + Math.max(0, Number(d && d.hours) || 0);
+    }, 0);
+  }
+  function totalGameHours(g) { return gameHours(g) + dlcHours(g); }
+  function dlcCount(g) { return (g && Array.isArray(g.dlcs)) ? g.dlcs.length : 0; }
+  function dlcStatusLabel(status) {
+    return t('dlc.status.' + (status || 'pendiente'));
+  }
+  /* Fuente unica en storage.js (incluye UYU "$U", PEN "S/" y el resto de divisas). */
+  function currencySymbol(code) {
+    if (STORAGE && typeof STORAGE.currencySymbol === 'function') return STORAGE.currencySymbol(code);
+    return ({ EUR: '€', USD: '$', GBP: '£', JPY: '¥', BRL: 'R$', RUB: '₽',
+      ARS: '$', CLP: '$', MXN: '$', UYU: '$U', COP: '$', PEN: 'S/', CAD: '$', AUD: '$' })[code] || code;
+  }
+  function currencyLabel(code) {
+    if (STORAGE && typeof STORAGE.currencyLabel === 'function') return STORAGE.currencyLabel(code);
+    return code + ' (' + currencySymbol(code) + ')';
+  }
+  function money(amount, code) {
+    var n = Math.round((Number(amount) || 0) * 100) / 100;
+    var digits = code === 'JPY' ? 0 : 2;
+    var text = n.toLocaleString(localeTag(), { minimumFractionDigits: digits, maximumFractionDigits: digits });
+    return currencySymbol(code) + text;
+  }
+  function toMain(amount, from) {
+    if (!STORAGE || typeof STORAGE.convertAmount !== 'function') return Number(amount) || 0;
+    return STORAGE.convertAmount(amount, from || mainCurrency, mainCurrency);
+  }
+  function gamePrice(g) {
+    if (!g) return 0;
+    return toMain(g.free ? 0 : g.price, g.currency || mainCurrency);
+  }
+  function dlcPrice(d) {
+    if (!d) return 0;
+    return toMain(d.free ? 0 : d.price, d.currency || mainCurrency);
+  }
+  /* Inversión y valor: precio por juego (base + DLC), horas totales y rentabilidad. */
+  function investmentData(games) {
+    var list = Array.isArray(games) ? games : [];
+    var total = 0, hours = 0, free = 0, counted = 0;
+    var byPlatform = {}, rentable = [];
+    list.forEach(function (g) {
+      var price = gamePrice(g) + ((g.dlcs || []).reduce(function (a, d) { return a + dlcPrice(d); }, 0));
+      var h = totalGameHours(g);
+      total += price; hours += h;
+      if (price <= 0) free++;
+      if (price > 0) counted++;
+      var plat = displayValue('p', g.platform) || t('card.noPlatform');
+      if (!byPlatform[plat]) byPlatform[plat] = 0;
+      byPlatform[plat] += price;
+      rentable.push({ title: g.title, hours: h, price: price, rate: price > 0 ? h / price : 0 });
+    });
+    return {
+      total: total, hours: hours, free: free, counted: counted,
+      avgPrice: counted ? total / counted : 0,
+      costPerHour: hours > 0 ? total / hours : 0,
+      byPlatform: byPlatform,
+      best: rentable.filter(function (r) { return r.price > 0 && r.hours > 0; })
+        .sort(function (a, b) { return b.rate - a.rate; }).slice(0, 5)
+    };
+  }
+  function renderInvestment() {
+    if (!$('inv-total')) return;
+    var d = investmentData(state.games);
+    $('inv-total').innerHTML = esc(money(d.total, mainCurrency)) + '<small>' + esc(mainCurrency) + '</small>';
+    $('inv-total-s').textContent = t('invest.gamesWithPrice', { n: d.counted, free: d.free });
+    $('inv-avg').innerHTML = esc(money(d.avgPrice, mainCurrency)) + '<small>' + esc(mainCurrency) + '</small>';
+    $('inv-avg-s').textContent = t('invest.avgHint');
+    $('inv-hour').innerHTML = esc(money(d.costPerHour, mainCurrency)) + '<small>/h</small>';
+    $('inv-hour-s').textContent = t('invest.hourHint', { hours: fmtNum(d.hours) });
+    $('inv-currency').value = mainCurrency;
+    var plats = Object.keys(d.byPlatform).sort(function (a, b) { return d.byPlatform[b] - d.byPlatform[a]; });
+    $('inv-platforms').innerHTML = plats.length ? plats.map(function (p) {
+      return barHtml(p, d.byPlatform[p], Math.max.apply(null, plats.map(function (k) { return d.byPlatform[k]; })),
+        money(d.byPlatform[p], mainCurrency));
+    }).join('') : '<span class="msg">' + esc(t('stats.noData')) + '</span>';
+    $('inv-best').innerHTML = d.best.length ? d.best.map(function (r, i) {
+      return '<div class="inv-row"><span class="rank num">' + (i + 1) + '</span>' +
+        '<span class="n" title="' + esc(r.title) + '">' + esc(r.title) + '</span>' +
+        '<span class="c num">' + esc(fmtNum(r.rate)) + ' ' + esc(t('invest.hoursPerMoney', { cur: mainCurrency })) + '</span></div>';
+    }).join('') : '<span class="msg">' + esc(t('invest.noRentable')) + '</span>';
+  }
   /* Dirección inversa: al entrar en la ficha (o al completar los logros en ella)
      el estado pasa a "Platino 100%". */
   function syncStatusFromAchievements(g) {
@@ -2511,13 +2604,13 @@
       });
     }
     var active = gamesOfYear(state.wrappedYear);
-    var hours = active.reduce(function (a, g) { return a + gameHours(g); }, 0);
+    var hours = active.reduce(function (a, g) { return a + totalGameHours(g); }, 0);
     var finished = active.filter(function (g) { return g.status === 'completado' || is100(g); });
     var perfect = active.filter(is100);
     var byGame = {}, byGenre = {}, byPlat = {};
     active.forEach(function (g) {
       var id = g.id || g.title;
-      var h = gameHours(g);
+      var h = totalGameHours(g);
       if (!byGame[id]) byGame[id] = { title: g.title, hours: 0 };
       byGame[id].hours += h;
       var genre = displayValue('g', primaryGenre(g)) || t('card.noGenre');
@@ -2558,7 +2651,7 @@
         var group = gamesOfYear(y);
         return {
           y: y,
-          hours: group.reduce(function (a, g) { return a + gameHours(g); }, 0),
+          hours: group.reduce(function (a, g) { return a + totalGameHours(g); }, 0),
           fin: group.filter(function (g) { return g.status === 'completado' || is100(g); }).length
         };
       });
@@ -2571,6 +2664,7 @@
           '<span class="f num">' + esc(t('wrapped.finishedShort', { n: r.fin })) + '</span></button>';
       }).join('') : '<span class="msg">' + esc(t('wrapped.noYears')) + '</span>';
     }
+    renderInvestment();
   }
 
   /* ---------- sesiones y logros dentro de la ficha ---------- */
@@ -2604,6 +2698,125 @@
       return '<button class="coll-chip" type="button" data-col-toggle="' + esc(c.id) + '" aria-pressed="' + on + '">' + esc(c.name) + '</button>';
     }).join('') : '<span class="msg">' + esc(t('coll.empty')) + '</span>';
   }
+  /* ---------- DLC / expansiones dentro de la ficha (Etapa 2) ---------- */
+  function renderDlcStatusSelect() {
+    var sel = $('dlc-status');
+    if (!sel) return;
+    var codes = (STORAGE && typeof STORAGE.dlcStatusList === 'function') ? STORAGE.dlcStatusList() : ['pendiente'];
+    var current = sel.value || 'pendiente';
+    sel.innerHTML = codes.map(function (c) {
+      return '<option value="' + c + '">' + esc(dlcStatusLabel(c)) + '</option>';
+    }).join('');
+    sel.value = current;
+  }
+  function renderCurrencySelects() {
+    var codes = (STORAGE && typeof STORAGE.currencyList === 'function') ? STORAGE.currencyList() : ['EUR'];
+    /* El selector de "Moneda principal" llegaba al HTML sin <option>: por eso el
+       recuadro aparecia vacio. Ahora los tres selects comparten el mismo catalogo
+       y etiquetas legibles ("EUR (€)", "UYU ($U)", ...). */
+    var options = codes.map(function (c) {
+      return '<option value="' + esc(c) + '">' + esc(currencyLabel(c)) + '</option>';
+    }).join('');
+    ['inv-currency', 'e-currency', 'dlc-currency'].forEach(function (id) {
+      var el = $(id);
+      if (!el) return;
+      var current = el.value || mainCurrency;
+      el.innerHTML = options;
+      el.value = current;
+    });
+    renderDlcStatusSelect();
+  }
+  function togglePriceField(inputId, checkId) {
+    var input = $(inputId), check = $(checkId);
+    if (input && check) input.disabled = !!check.checked;
+  }
+  function dlcFormValues() {
+    var title = ($('dlc-title').value || '').trim().slice(0, 120);
+    if (!title) { showFlash(t('dlc.errTitle')); $('dlc-title').focus(); return null; }
+    var free = !!$('dlc-free').checked;
+    return {
+      id: uid(), title: title,
+      status: $('dlc-status').value || 'pendiente',
+      hours: Math.max(0, parseFloat($('dlc-hours').value) || 0),
+      price: free ? 0 : Math.max(0, parseFloat($('dlc-price').value) || 0),
+      currency: $('dlc-currency').value || mainCurrency,
+      free: free
+    };
+  }
+  function resetDlcForm() {
+    $('dlc-title').value = '';
+    $('dlc-status').value = 'pendiente';
+    $('dlc-hours').value = 0;
+    $('dlc-price').value = '';
+    $('dlc-free').checked = false;
+    $('dlc-currency').value = mainCurrency;
+    $('dlc-add').textContent = t('dlc.add');
+    $('dlc-add').removeAttribute('data-edit-id');
+    togglePriceField('dlc-price', 'dlc-free');
+  }
+  function renderDlcs() {
+    var sum = $('dlc-summary');
+    var h = dlcHours({ dlcs: editDlcs });
+    if (sum) sum.textContent = editDlcs.length ? t('dlc.countHours', { n: editDlcs.length, h: fmtNum(h) }) : '';
+    var box = $('dlc-list');
+    if (!box) return;
+    box.innerHTML = editDlcs.length ? editDlcs.map(function (d) {
+      var st = d.status || 'pendiente';
+      var color = st === 'platino' ? 'var(--s-plat)' : st === 'completado' ? 'var(--s-done)' :
+        st === 'jugando' ? 'var(--s-play)' : 'var(--s-pend)';
+      return '<div class="dlc-item">' +
+        '<span class="dlc-pill" style="--c:' + color + '">' + esc(dlcStatusLabel(st)) + '</span>' +
+        '<span class="dlc-name" title="' + esc(d.title) + '">' + esc(d.title) + '</span>' +
+        '<span class="dlc-hours num">' + esc(fmtNum(d.hours)) + ' h</span>' +
+        '<span class="dlc-price num">' + esc(d.free || !Number(d.price) ? t('dlc.free') : money(d.price, d.currency || mainCurrency)) + '</span>' +
+        '<button class="btn sm ghost" type="button" data-dlc-edit="' + esc(d.id) + '" aria-label="' + esc(t('dlc.editAria', { title: d.title })) + '">✎</button>' +
+        '<button class="btn sm ghost" type="button" data-dlc-del="' + esc(d.id) + '" aria-label="' + esc(t('dlc.delete')) + '">×</button>' +
+        '</div>';
+    }).join('') : '<span class="msg">' + esc(t('dlc.empty')) + '</span>';
+  }
+  function addDlc() {
+    var values = dlcFormValues();
+    if (!values) return;
+    var editId = $('dlc-add').getAttribute('data-edit-id');
+    if (editId) {
+      for (var i = 0; i < editDlcs.length; i++) {
+        if (editDlcs[i].id === editId) { values.id = editId; editDlcs[i] = values; break; }
+      }
+    } else {
+      if (editDlcs.length >= 40) { showFlash(t('dlc.limit')); return; }
+      editDlcs.push(values);
+    }
+    resetDlcForm(); renderDlcs();
+    if (editingId) persistEditorExtras();
+  }
+  function removeDlc(id) {
+    editDlcs = editDlcs.filter(function (d) { return d.id !== id; });
+    if ($('dlc-add').getAttribute('data-edit-id') === id) resetDlcForm();
+    renderDlcs();
+    if (editingId) persistEditorExtras();
+  }
+  function editDlc(id) {
+    var d = editDlcs.filter(function (x) { return x.id === id; })[0];
+    if (!d) return;
+    $('dlc-title').value = d.title;
+    $('dlc-status').value = d.status || 'pendiente';
+    $('dlc-hours').value = d.hours || 0;
+    $('dlc-price').value = d.free || !Number(d.price) ? '' : d.price;
+    $('dlc-free').checked = !!d.free || !Number(d.price);
+    $('dlc-currency').value = d.currency || mainCurrency;
+    togglePriceField('dlc-price', 'dlc-free');
+    $('dlc-add').setAttribute('data-edit-id', d.id);
+    $('dlc-add').textContent = t('dlc.update');
+    $('dlc-title').focus();
+  }
+  function gamePriceValues() {
+    var free = !!$('e-free').checked;
+    return {
+      price: free ? 0 : Math.max(0, parseFloat($('e-price').value) || 0),
+      currency: $('e-currency').value || mainCurrency,
+      free: free
+    };
+  }
   function persistEditorExtras() {
     var statusSel = $('e-status');
     var status = statusSel ? statusSel.value : '';
@@ -2614,7 +2827,10 @@
     if (statusSel && status) statusSel.value = status;
     $('a-unlocked').value = editAch.unlocked;
     $('a-total').value = editAch.total;
-    if (!editingId) { renderSessions(); renderEditorCollections(); return; }
+    if (!editingId) { renderSessions(); renderEditorCollections(); renderDlcs(); return; }
+    var price = gamePriceValues();
+    var dlcs = (STORAGE && typeof STORAGE.normalizeDlcs === 'function')
+      ? STORAGE.normalizeDlcs(editDlcs, price.currency) : editDlcs.slice();
     state.games.forEach(function (g) {
       if (g.id !== editingId) return;
       g.sessions = editSessions.map(function (s) {
@@ -2626,9 +2842,11 @@
         ? (g.completedAt || todayISO()) : '';
       g.collections = editCollections.slice();
       g.hours = Math.max(0, parseFloat($('e-hours').value) || 0);
+      g.price = price.price; g.currency = price.currency; g.free = price.free;
+      g.dlcs = dlcs;
       g.updated = Date.now();
     });
-    save(); renderAll(); renderSessions(); renderEditorCollections();
+    save(); renderAll(); renderSessions(); renderEditorCollections(); renderDlcs();
   }
   function addSession() {
     var date = $('s-date').value;
@@ -2849,6 +3067,10 @@
     $('e-status').innerHTML = statusOptions();
     $('e-status').value = g ? g.status : (state.f.status !== 'todos' ? state.f.status : 'pendiente');
     $('e-hours').value = g ? g.hours : 0;
+    $('e-price').value = g && !g.free ? (g.price || 0) : '';
+    $('e-free').checked = g ? !!g.free : false;
+    $('e-currency').value = g ? (g.currency || mainCurrency) : mainCurrency;
+    togglePriceField('e-price', 'e-free');
     $('e-notes').value = g ? g.notes : '';
     $('e-release').value = g ? (g.releaseDate || g.releaseYear || '') : '';
     $('e-dev').value = g ? (g.developer || '') : '';
@@ -2868,15 +3090,24 @@
     editAch = g && g.achievements ? { unlocked: g.achievements.unlocked || 0, total: g.achievements.total || 0 }
       : { unlocked: 0, total: 0 };
     editCollections = (g && Array.isArray(g.collections)) ? g.collections.slice() : [];
+    editDlcs = (g && Array.isArray(g.dlcs)) ? g.dlcs.map(function (d) {
+      return {
+        id: d.id || uid(), title: d.title, status: d.status || 'pendiente',
+        hours: Number(d.hours) || 0, price: Number(d.price) || 0,
+        currency: d.currency || mainCurrency, free: !!d.free || !Number(d.price)
+      };
+    }) : [];
+    resetDlcForm();
     $('s-date').value = todayISO();
     $('s-hours').value = 1; $('s-mins').value = 0; $('s-note').value = '';
     $('a-unlocked').value = editAch.unlocked; $('a-total').value = editAch.total;
     /* Un platino con total conocido abre ya con desbloqueados = total. */
     syncEditorAchievements();
-    ['sess-panel', 'ach-panel', 'coll-panel'].forEach(function (pid) {
+    ['dlc-panel', 'sess-panel', 'ach-panel', 'coll-panel'].forEach(function (pid) {
       var el = $(pid); if (el) el.open = false;
     });
     buildScores();
+    renderDlcs();
     renderSessions();
     renderEditorCollections();
     renderCoverPreview();
@@ -2902,6 +3133,9 @@
       renderCoverPreview();
     }
     var rel = splitRelease($('e-release').value);
+    var price = gamePriceValues();
+    var dlcs = (STORAGE && typeof STORAGE.normalizeDlcs === 'function')
+      ? STORAGE.normalizeDlcs(editDlcs, price.currency) : editDlcs.slice();
     var data = {
       title: title,
       platform: keyOf('p', platformSelectValue()),
@@ -2922,7 +3156,8 @@
       }),
       achievements: { unlocked: editAch.unlocked, total: editAch.total },
       collections: editCollections.slice(),
-      completedAt: ''
+      completedAt: '',
+      price: price.price, currency: price.currency, free: price.free, dlcs: dlcs
     };
     /* Sincronización bidireccional antes de guardar: platino => todos los
        trofeos; 100% de trofeos => estado "Platino 100%". */
@@ -3573,7 +3808,8 @@
     setPlatformOptions(platformOptions, platformHelpKey, platformShowAll);
     renderGenreChips();
     renderAll();
-    if (!$('ov-edit').hidden) { renderSessions(); renderEditorCollections(); }
+    renderCurrencySelects();
+    if (!$('ov-edit').hidden) { renderDlcs(); renderSessions(); renderEditorCollections(); }
     if (!$('ov-collections').hidden) renderCollections();
     if (!$('ov-recommend').hidden) {
       renderRecommendReason();
@@ -3618,6 +3854,20 @@
   on('c-create', 'click', createCollection);
   on('c-new', 'keydown', function (e) { if (e.key === 'Enter') createCollection(); });
   on('s-add', 'click', addSession);
+  on('dlc-add', 'click', addDlc);
+  on('dlc-title', 'keydown', function (e) { if (e.key === 'Enter') addDlc(); });
+  on('dlc-free', 'change', function () { togglePriceField('dlc-price', 'dlc-free'); });
+  on('e-free', 'change', function () {
+    togglePriceField('e-price', 'e-free');
+    if (editingId) persistEditorExtras();
+  });
+  on('e-price', 'change', function () { if (editingId) persistEditorExtras(); });
+  on('e-currency', 'change', function () { if (editingId) persistEditorExtras(); });
+  on('inv-currency', 'change', function () {
+    mainCurrency = (STORAGE && typeof STORAGE.setMainCurrency === 'function')
+      ? STORAGE.setMainCurrency(this.value) : this.value;
+    renderCurrencySelects(); renderInvestment(); renderAll();
+  });
   /* 'input' dispara en cada tecla y en los botones +/-: la sincronización no
      espera a que el campo pierda el foco. */
   on('a-unlocked', 'input', updateAchievements);
@@ -3738,6 +3988,10 @@
       var data = isJson ? STORAGE.importJSON(text) : STORAGE.importCSV(text);
       state.games = data.games;
       state.collections = data.collections || [];
+      if (data.mainCurrency && STORAGE.setMainCurrency) {
+        mainCurrency = STORAGE.setMainCurrency(data.mainCurrency);
+        renderCurrencySelects();
+      }
       state.f.col = '';
       saveCollections(); save(); closeBackup(); renderAll(); autoResolveMissingCovers();
       $('b-msg').textContent = isJson ? t('backup.imported') : t('backup.csvImported');
@@ -3760,6 +4014,7 @@
     var res = STORAGE.resetAll();
     state.games = res.games;
     state.collections = res.collections;
+    if (res.mainCurrency) mainCurrency = res.mainCurrency;
     state.f.col = ''; state.wrappedYear = '';
     storageOk = STORAGE.getStorageOk ? STORAGE.getStorageOk() : true;
     closeBackup();
@@ -3791,6 +4046,8 @@
       toggleOwnedKey(el.getAttribute('data-owned-toggle')); return;
     }
     if ((el = closest(e.target, '[data-session]'))) { removeSession(el.getAttribute('data-session')); return; }
+    if ((el = closest(e.target, '[data-dlc-del]'))) { removeDlc(el.getAttribute('data-dlc-del')); return; }
+    if ((el = closest(e.target, '[data-dlc-edit]'))) { editDlc(el.getAttribute('data-dlc-edit')); return; }
     if ((el = closest(e.target, '[data-col-toggle]'))) { toggleCollection(el.getAttribute('data-col-toggle')); return; }
     if ((el = closest(e.target, '[data-col-del]'))) { deleteCollection(el.getAttribute('data-col-del')); return; }
     if ((el = closest(e.target, '[data-w-year]'))) {
@@ -3859,7 +4116,7 @@
     navigator.serviceWorker.addEventListener('controllerchange', reloadClean);
     purgeOldCaches().then(function (purged) {
       /* La query fuerza al navegador a descargar el SW nuevo sin usar su HTTP cache. */
-      return navigator.serviceWorker.register('./sw.js?v=1.4.0', { scope: './' })
+      return navigator.serviceWorker.register('./sw.js?v=1.5.1', { scope: './' })
         .then(function (registration) {
           if (purged) setTimeout(reloadClean, 200);
           return registration.update();
@@ -3918,6 +4175,7 @@
       window.GVApp.applyTranslations();
     }
     try { initView(); } catch (e) {}
+    try { renderCurrencySelects(); } catch (e) {}
     try { fillDataLists(); } catch (e) {}
     try { renderPlatformSelect(); } catch (e) {}
     try { renderGenreChips(); } catch (e) {}

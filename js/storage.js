@@ -4,17 +4,20 @@
   var OWNED_KEY = 'gamevault-owned-platforms-v1';
   var VIEW_KEY = 'gamevault-active-view-v1';
   var COLLECTIONS_KEY = 'gamevault-collections-v1';
+  var CURRENCY_KEY = 'gamevault-main-currency-v1';
 
   /* ---------- Capa IndexedDB (Etapa 1) ----------
      Espejo de todas las claves de la app en IndexedDB y store 'files' para
      caratulas/imagenes grandes, sin el limite de 5 MB de localStorage. */
   var DB_NAME = 'gamevault_db';
   var DB_VERSION = 1;
-  var SCHEMA_VERSION = 2;
+  /* v3: precios y DLC viajan dentro de cada juego y la moneda principal es una
+     clave propia; ambos se reflejan en IndexedDB con el resto del estado. */
+  var SCHEMA_VERSION = 3;
   var STORE_STATE = 'state';
   var STORE_FILES = 'files';
   var STATE_KEY = 'main';
-  var MIRROR_KEYS = [KEY, OWNED_KEY, VIEW_KEY, COLLECTIONS_KEY, 'gamevault-lang'];
+  var MIRROR_KEYS = [KEY, OWNED_KEY, VIEW_KEY, COLLECTIONS_KEY, CURRENCY_KEY, 'gamevault-lang'];
   var dbPromise = null, idbReady = false, idbFailed = false;
   var initPromise = null, writeChain = Promise.resolve(), memoryBackup = null;
 
@@ -116,6 +119,75 @@
     } catch (e) { return fallback; }
   }
   function uid() { return 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
+  /* ---------- monedas y precios (Etapa 2) ----------
+     Cada juego/DLC guarda su propia moneda. Para agregar la biblioteca se convierte
+     todo a la moneda principal con these rates orientativos (la app funciona sin
+     red): el propio resumen avisa de que la conversión es aproximada. */
+  /* Divisas globales principales + las de la region (UYU incluido). EUR es la
+     moneda puente de CURRENCY_RATES: 1 EUR = 1. Cada tasa es el valor en EUR de
+     una unidad de la divisa: aproximada y sin depender de la red. */
+  var CURRENCIES = ['EUR', 'USD', 'GBP', 'JPY', 'BRL', 'RUB', 'ARS', 'CLP', 'MXN',
+    'UYU', 'COP', 'PEN', 'CAD', 'AUD'];
+  var CURRENCY_RATES = {
+    EUR: 1, USD: 0.92, GBP: 1.17, JPY: 0.0061, BRL: 0.18,
+    RUB: 0.0105, ARS: 0.0011, CLP: 0.00105, MXN: 0.05,
+    UYU: 0.023, COP: 0.00024, PEN: 0.245, CAD: 0.64, AUD: 0.59
+  };
+  /* UYU lleva "$U" para no confundirse con USD/ARS/CLP/COP/MXN/CAD/AUD. */
+  var CURRENCY_SYMBOLS = {
+    EUR: '€', USD: '$', GBP: '£', JPY: '¥', BRL: 'R$', RUB: '₽',
+    ARS: '$', CLP: '$', MXN: '$', UYU: '$U', COP: '$', PEN: 'S/',
+    CAD: '$', AUD: '$'
+  };
+  var DEFAULT_CURRENCY_BY_LANG = {
+    en: 'USD', es: 'EUR', pt: 'BRL', fr: 'EUR', it: 'EUR', de: 'EUR', ru: 'RUB', ja: 'JPY'
+  };
+  function normCurrency(value, fallback) {
+    var s = String(value == null ? '' : value).trim().toUpperCase();
+    if (CURRENCIES.indexOf(s) !== -1) return s;
+    if (CURRENCIES.indexOf(String(fallback || '').toUpperCase()) !== -1) return String(fallback).toUpperCase();
+    return 'EUR';
+  }
+  function currencySymbol(code) {
+    var c = normCurrency(code, 'EUR');
+    return CURRENCY_SYMBOLS[c] || c;
+  }
+  /* Etiqueta unica para los tres desplegables (principal, juego y DLC): "UYU ($U)". */
+  function currencyLabel(code) {
+    var c = normCurrency(code, 'EUR');
+    return c + ' (' + currencySymbol(c) + ')';
+  }
+  function defaultCurrency() {
+    var lang = (I && typeof I.current === 'function') ? I.current() : 'es';
+    return DEFAULT_CURRENCY_BY_LANG[lang] || 'EUR';
+  }
+  function loadMainCurrency() {
+    try {
+      var raw = localStorage.getItem(CURRENCY_KEY);
+      if (raw) return normCurrency(raw, defaultCurrency());
+    } catch (e) {}
+    return defaultCurrency();
+  }
+  function saveMainCurrency(value) {
+    var code = normCurrency(value, defaultCurrency());
+    try { localStorage.setItem(CURRENCY_KEY, code); storageOk = true; }
+    catch (e) { storageOk = false; }
+    writeIDB(dumpLocal());
+    return code;
+  }
+  /* Convierte un importe entre monedas soportadas; EUR actúa de moneda de puente. */
+  function convertAmount(value, from, to) {
+    var amount = Number(value) || 0;
+    var a = CURRENCY_RATES[normCurrency(from, 'EUR')] || 1;
+    var b = CURRENCY_RATES[normCurrency(to, 'EUR')] || 1;
+    return amount * a / b;
+  }
+  function normPrice(value) {
+    var n = Number(value);
+    if (!isFinite(n) || n <= 0) return 0;
+    return Math.round(Math.min(n, 1000000) * 100) / 100;
+  }
 
   /* Catálogo canónico de hardware (v1.0.8): cinco familias con sus variantes de
      emulador. App.js consume estas listas para los chips, el filtro, el datalist
@@ -246,14 +318,55 @@
     var d = demoTrophies(title);
     return d ? { unlocked: d.unlocked, total: d.total } : { unlocked: 0, total: 0 };
   }
+  /* Precios de venta habituales y expansiones reales del Modo Demo. Fuente única
+     para el generador y para migrate(): una demo guardada antes de la Etapa 2 se
+     repara sin borrar bibliotecas reales ni pisar datos que el usuario editó. */
+  var DEMO_PRICES = [
+    { title: 'Hollow Knight', price: 14.99 },
+    { title: 'Elden Ring', price: 59.99 },
+    { title: 'Hades', price: 24.99 },
+    { title: 'Disco Elysium', price: 39.99 },
+    { title: 'Persona 5 Royal', price: 49.99 },
+    { title: 'Stardew Valley', price: 14.99 },
+    { title: 'Final Fantasy VII', price: 8.99 }
+  ];
+  var DEMO_DLCS = [
+    {
+      title: 'Elden Ring', items: [
+        { title: 'Shadow of the Erdtree', status: 'completado', hours: 31.5, price: 39.99 },
+        { title: 'Elden Ring: Nightreign', status: 'pendiente', hours: 0, price: 29.99 }
+      ]
+    },
+    {
+      title: 'Hollow Knight', items: [
+        { title: 'Hidden Dreams', status: 'jugando', hours: 3, price: 0 },
+        { title: 'The Grimm Troupe', status: 'completado', hours: 6.5, price: 4.99 }
+      ]
+    },
+    { title: 'Hades', items: [{ title: 'Hades: Soundtrack', status: 'pendiente', hours: 0, price: 0 }] }
+  ];
+  function demoPrice(title) {
+    var key = String(title || '').trim().toLowerCase();
+    for (var i = 0; i < DEMO_PRICES.length; i++) {
+      if (DEMO_PRICES[i].title.toLowerCase() === key) return DEMO_PRICES[i].price;
+    }
+    return 0;
+  }
+  function demoDlcs(title) {
+    var key = String(title || '').trim().toLowerCase();
+    for (var i = 0; i < DEMO_DLCS.length; i++) {
+      if (DEMO_DLCS[i].title.toLowerCase() === key) return normalizeDlcs(DEMO_DLCS[i].items, 'EUR');
+    }
+    return [];
+  }
   /* Repara los juegos de ejemplo guardados antes de que existieran los trofeos
      (0 / 0). Solo rellena datos vacíos: nunca pisa cifras que el usuario editó. */
   function migrate(games) {
     var changed = false;
     (Array.isArray(games) ? games : []).forEach(function (g) {
-      if (!g || !g.achievements) return;
+      if (!g) return;
       var d = demoTrophies(g.title);
-      if (!d) return;
+      if (d && g.achievements) {
       var a = g.achievements;
       if (Number(a.total) === 0 && Number(a.unlocked) === 0) {
         a.total = d.total;
@@ -264,6 +377,18 @@
       if (g.status === 'platino' && a.total > 0 && a.unlocked !== a.total) {
         a.unlocked = a.total;
         changed = true;
+      }
+      }
+      /* Etapa 2: solo rellena ejemplos intactos; un juego editado deja de ser
+         example y nunca se le reescriben sus precios o expansiones. */
+      if (!g.example) return;
+      var price = demoPrice(g.title);
+      if (price && !Number(g.price)) {
+        g.price = price; g.free = false; g.currency = 'EUR'; changed = true;
+      }
+      if (!Array.isArray(g.dlcs) || !g.dlcs.length) {
+        var dlcs = demoDlcs(g.title);
+        if (dlcs.length) { g.dlcs = dlcs; changed = true; }
       }
     });
     return changed;
@@ -284,11 +409,47 @@
     };
   }
 
+  /* ---------- DLC y expansiones (Etapa 2) ----------
+     Viven dentro del juego base para que viajen juntos en JSON/CSV y en la copia
+     de IndexedDB. No hay expansiones huérfanas ni una segunda fuente de verdad. */
+  var DLC_STATUSES = ['pendiente', 'jugando', 'completado', 'platino'];
+  function normalizeDlc(d, currency) {
+    if (!d || typeof d !== 'object') return null;
+    var title = String(d.title || '').trim().slice(0, 120);
+    if (!title) return null;
+    var price = normPrice(d.free ? 0 : d.price);
+    return {
+      id: String(d.id || uid()).slice(0, 60),
+      title: title,
+      status: DLC_STATUSES.indexOf(d.status) >= 0 ? d.status : 'pendiente',
+      hours: Math.max(0, Math.round((Number(d.hours) || 0) * 10) / 10),
+      price: price,
+      currency: normCurrency(d.currency, currency || 'EUR'),
+      free: price === 0 || !!d.free
+    };
+  }
+  function normalizeDlcs(value, currency) {
+    var out = [];
+    if (!Array.isArray(value)) return out;
+    value.forEach(function (d) {
+      var one = normalizeDlc(d, currency);
+      if (one && out.length < 40) out.push(one);
+    });
+    return out;
+  }
+  function dlcHours(g) {
+    return (Array.isArray(g && g.dlcs) ? g.dlcs : []).reduce(function (a, d) {
+      return a + (Math.max(0, Number(d && d.hours) || 0));
+    }, 0);
+  }
+
   function normalize(g) {
     var rel = splitRelease(g.releaseDate || g.releaseYear || '');
     var genres = genreList(g.genres);
     if (!genres.length) genres = genreList(g.genre);
     var status = ['jugando', 'pendiente', 'completado', 'platino', 'abandonado'].indexOf(g.status) >= 0 ? g.status : 'pendiente';
+    var currency = normCurrency(g.currency, defaultCurrency());
+    var price = normPrice(g.free ? 0 : g.price);
     var ach = syncPlatinumAchievements(normalizeAchievements(g.achievements || {
       unlocked: g.achUnlocked, total: g.achTotal
     }), status);
@@ -318,6 +479,11 @@
       achievements: ach,
       collections: normalizeCollectionIds(g.collections),
       completedAt: validDate(g.completedAt),
+      /* Etapa 2: precio en la moneda elegida (0 = gratis/suscripción) y DLCs. */
+      price: price,
+      currency: currency,
+      free: price === 0 || !!g.free,
+      dlcs: normalizeDlcs(g.dlcs || g.expansions || g.dlc, currency),
       /* Los juegos guardados antes de esta version simplemente reciben campos vacios. */
       example: !!g.example
     };
@@ -380,6 +546,10 @@
         sessions: x.sessions || [],
         achievements: x.achievements || demoAchievements(t),
         completedAt: done ? iso(year - (i % 2 ? 1 : 0), 3 + (i % 8), 12) : '',
+        price: x.price === undefined ? demoPrice(t) : x.price,
+        currency: x.currency || 'EUR',
+        free: x.free === undefined ? !demoPrice(t) : x.free,
+        dlcs: x.dlcs || demoDlcs(t),
         example: true, cover: '', coverSource: ''
       });
     }
@@ -404,8 +574,9 @@
   /* El sobre JSON conserva las colecciones; se aceptan backups planos (v1.2.x). */
   function exportJSON(games, collections) {
     return JSON.stringify({
-      app: 'GameVault', schemaVersion: SCHEMA_VERSION, version: 2,
+      app: 'GameVault', schemaVersion: SCHEMA_VERSION, version: 3,
       exportedAt: new Date().toISOString(),
+      mainCurrency: loadMainCurrency(),
       games: games,
       collections: Array.isArray(collections) ? collections : []
     }, null, 1);
@@ -436,6 +607,38 @@
     })) return { ok: false, msgText: 'El respaldo no contiene juegos reconocibles de GameVault.' };
     if (envelope && data.collections !== undefined && !Array.isArray(data.collections)) {
       return { ok: false, msgText: 'El respaldo está incompleto: las colecciones no son válidas.' };
+    }
+    /* Etapa 2: se aceptan backups antiguos (sin precios ni DLC), pero si los
+       trayendo deben ser estructuralmente válidos antes de reemplazar la biblioteca. */
+    if (envelope && sv >= 3 && data.mainCurrency !== undefined &&
+        CURRENCIES.indexOf(String(data.mainCurrency || '').toUpperCase()) === -1) {
+      return { ok: false, msgText: 'La moneda principal del respaldo no es compatible.' };
+    }
+    if (Array.isArray(arr)) {
+      for (var i = 0; i < arr.length; i++) {
+        var g = arr[i];
+        if (!g || typeof g !== 'object') continue;
+        if (g.price !== undefined && g.price !== null &&
+            (!isFinite(Number(g.price)) || Number(g.price) < 0)) {
+          return { ok: false, msgText: 'El respaldo contiene un precio no válido.' };
+        }
+        var list = g.dlcs !== undefined ? g.dlcs : (g.expansions !== undefined ? g.expansions : g.dlc);
+        if (list !== undefined && !Array.isArray(list)) {
+          return { ok: false, msgText: 'El respaldo contiene DLC no válidos.' };
+        }
+        if (Array.isArray(list)) {
+          for (var j = 0; j < list.length; j++) {
+            var d = list[j];
+            if (!d || typeof d !== 'object' || !String(d.title || '').trim()) {
+              return { ok: false, msgText: 'El respaldo contiene un DLC sin título.' };
+            }
+            if (d.price !== undefined && d.price !== null &&
+                (!isFinite(Number(d.price)) || Number(d.price) < 0)) {
+              return { ok: false, msgText: 'El respaldo contiene un precio de DLC no válido.' };
+            }
+          }
+        }
+      }
     }
     return { ok: true, version: envelope ? (data.schemaVersion || 1) : 1 };
   }
@@ -469,14 +672,19 @@
       Object.keys(names).forEach(function (k) { cols.push(names[k]); });
     }
     /* Se mantiene hasta que app.js termina de aplicar la importacion. */
-    return { games: arr.map(normalize), collections: cols };
+    return {
+      games: arr.map(normalize),
+      collections: cols,
+      mainCurrency: (data && data.mainCurrency) ? normCurrency(data.mainCurrency, loadMainCurrency()) : loadMainCurrency()
+    };
   }
 
   /* CSV con una fila por juego: las sesiones viajan como JSON en su celda y las
      colecciones como nombres separados por "|" (portables entre dispositivos). */
   var CSV_COLS = ['id', 'title', 'platform', 'genres', 'genre', 'releaseDate', 'releaseYear',
     'developer', 'summary', 'status', 'hours', 'score', 'notes', 'cover', 'added', 'updated',
-    'sessions', 'achUnlocked', 'achTotal', 'collections', 'completedAt'];
+    'sessions', 'achUnlocked', 'achTotal', 'collections', 'completedAt',
+    'price', 'currency', 'free', 'dlcs', 'mainCurrency'];
 
   function csvCell(v) {
     var s = v == null ? '' : String(v);
@@ -497,6 +705,9 @@
           return names[id] || id;
         }).join('|'));
         if (c === 'completedAt') return csvCell(g.completedAt || '');
+        if (c === 'dlcs') return csvCell(JSON.stringify(Array.isArray(g.dlcs) ? g.dlcs : []));
+        if (c === 'free') return csvCell(g.free ? '1' : '');
+        if (c === 'mainCurrency') return csvCell(g.mainCurrency || loadMainCurrency());
         return csvCell(g[c]);
       }).join(','));
     });
@@ -553,10 +764,17 @@
         added: g.added, updated: g.updated, sessions: sessions,
         achievements: { unlocked: g.achUnlocked, total: g.achTotal },
         collections: String(g.collections || '').split('|').map(collectionId).filter(Boolean),
-        completedAt: g.completedAt
+        completedAt: g.completedAt,
+        price: g.price, currency: g.currency, free: g.free === '1' || g.free === 'true',
+        dlcs: (function () {
+          try { return JSON.parse(g.dlcs || '[]'); } catch (e) { return []; }
+        })()
       });
     });
-    return { games: games, collections: collections };
+    return {
+      games: games, collections: collections,
+      mainCurrency: head.indexOf('mainCurrency') >= 0 ? (rows[1][head.indexOf('mainCurrency')] || '') : ''
+    };
   }
 
   function download(filename, content, type) {
@@ -651,25 +869,34 @@
     writeIDB(dumpLocal());
     return storageOk;
   }
-  /* Reinicio completo: borra juegos/sesiones/logros/colecciones/consolas/vista. */
+  /* Reinicio completo: borra juegos/sesiones/logros/colecciones/consolas/vista
+     y devuelve la moneda al valor que corresponde al idioma actual. */
   function resetAll() {
     try {
       localStorage.removeItem(KEY);
       localStorage.removeItem(OWNED_KEY);
       localStorage.removeItem(VIEW_KEY);
       localStorage.removeItem(COLLECTIONS_KEY);
+      localStorage.removeItem(CURRENCY_KEY);
     } catch (e) {}
     var seeded = sample();
     save(seeded);
     saveCollections([]);
-    return { games: seeded, collections: [] };
+    return { games: seeded, collections: [], mainCurrency: loadMainCurrency() };
   }
+
+  /* Setters/recuperadores de la moneda principal (Etapa 2). */
+  function getMainCurrency() { return loadMainCurrency(); }
+  function setMainCurrency(value) { return saveMainCurrency(value); }
+  function currencyList() { return CURRENCIES.slice(); }
+  function dlcStatusList() { return DLC_STATUSES.slice(); }
 
   window.GVStorage = {
     KEY: KEY,
     OWNED_KEY: OWNED_KEY,
     VIEW_KEY: VIEW_KEY,
     COLLECTIONS_KEY: COLLECTIONS_KEY,
+    CURRENCY_KEY: CURRENCY_KEY,
     CONSOLE_GROUPS: CONSOLE_GROUPS,
     CONSOLE_KEYS: CONSOLE_KEYS,
     PC_LAUNCHER_KEYS: PC_LAUNCHER_KEYS,
@@ -679,6 +906,8 @@
     splitRelease: splitRelease,
     genreList: genreList,
     normalize: normalize,
+    normalizeDlcs: normalizeDlcs,
+    normalizeDlc: normalizeDlc,
     migrate: migrate,
     save: save,
     load: load,
@@ -694,6 +923,14 @@
     loadCollections: loadCollections,
     saveCollections: saveCollections,
     resetAll: resetAll,
+    getMainCurrency: getMainCurrency,
+    setMainCurrency: setMainCurrency,
+    currencyList: currencyList,
+    currencySymbol: currencySymbol,
+    currencyLabel: currencyLabel,
+    dlcStatusList: dlcStatusList,
+    convertAmount: convertAmount,
+    normCurrency: normCurrency,
     normalizeSession: normalizeSession,
     syncPlatinumAchievements: syncPlatinumAchievements,
     validDate: validDate,

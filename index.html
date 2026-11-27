@@ -10,7 +10,7 @@
     /* elimina de entrada cualquier cache antigua de GameVault para que no se
        sirva una versión previa del selector de plataformas. */
     (function () {
-      var CURRENT = 'gamevault-v1.4.0';
+      var CURRENT = 'gamevault-v1.5.1';
       if (!('caches' in window)) return;
       try {
         caches.keys().then(function (keys) {
@@ -183,6 +183,32 @@
       <div class="stat"><span class="k" data-i18n="wrapped.perfectYear">Al 100%</span><span class="v num" id="w-perfect">0</span><span class="s" id="w-perfect-s"></span></div>
     </section>
 
+    <section class="panel investment">
+      <div class="wrapped-title">
+        <h2 data-i18n="invest.title">Inversión y valor</h2>
+        <p class="msg" data-i18n="invest.desc">Gasto total, desglose por plataforma y costo por hora con todos tus DLC.</p>
+      </div>
+      <label class="lbl year-pick"><span data-i18n="invest.mainCurrency">Moneda principal</span>
+        <select class="field" id="inv-currency" data-i18n-aria="editor.currencyAria" aria-label="Moneda principal"></select>
+      </label>
+      <div class="stats invest-stats">
+        <div class="stat"><span class="k" data-i18n="invest.total">Gasto total</span><span class="v num" id="inv-total">0</span><span class="s" id="inv-total-s"></span></div>
+        <div class="stat"><span class="k" data-i18n="invest.avgPrice">Precio promedio por juego</span><span class="v num" id="inv-avg">0</span><span class="s" id="inv-avg-s"></span></div>
+        <div class="stat"><span class="k" data-i18n="invest.costHour">Costo por hora jugada</span><span class="v num" id="inv-hour">0</span><span class="s" id="inv-hour-s"></span></div>
+      </div>
+      <div class="insight invest-insight">
+        <div class="panel">
+          <h2 data-i18n="invest.byPlatform">Inversión por plataforma</h2>
+          <div class="bars" id="inv-platforms"></div>
+        </div>
+        <div class="panel">
+          <h2 data-i18n="invest.bestValue">Juegos más rentables (horas por dinero)</h2>
+          <div class="inv-list" id="inv-best"></div>
+          <p class="msg" data-i18n="invest.rateHint">Conversión aproximada entre monedas; ajusta la moneda principal para ver el resumen.</p>
+        </div>
+      </div>
+    </section>
+
     <section class="insight wrapped-insight">
       <div class="panel">
         <h2 data-i18n="wrapped.byYear">Por año</h2>
@@ -269,6 +295,16 @@
           <button class="plus" type="button" data-addh="5">+5</button>
         </div>
       </label>
+      <label class="lbl"><span data-i18n="editor.price">Precio / costo de adquisición</span>
+        <div class="hoursrow">
+          <input class="input num" id="e-price" type="number" min="0" step="0.01" inputmode="decimal" data-i18n-placeholder="editor.pricePlaceholder" placeholder="0.00" aria-label="Precio">
+          <select class="input price-currency" id="e-currency" data-i18n-aria="editor.currencyAria" aria-label="Moneda"></select>
+        </div>
+      </label>
+      <div class="lbl free-field"><span data-i18n="editor.freeLabel">Costo</span>
+        <label class="check-row"><input type="checkbox" id="e-free"><span data-i18n="editor.free">Gratis / Suscripción (0)</span></label>
+        <span class="help" data-i18n="editor.priceHint">Déjalo en 0 si fue gratis o viene con suscripción.</span>
+      </div>
       <div class="lbl full"><span data-i18n="editor.score">Mi puntuación</span>
         <div class="scores" id="e-scores" role="group" data-i18n-aria="editor.scoreAria" aria-label="Puntuación del 1 al 10"></div>
       </div>
@@ -278,6 +314,39 @@
       <label class="lbl full"><span data-i18n="editor.notes">Notas</span>
         <textarea class="input" id="e-notes" maxlength="600" data-i18n-placeholder="editor.notesPlaceholder" placeholder="Capítulo, misión pendiente, por qué lo dejé..."></textarea>
       </label>
+
+      <details class="subpanel full" id="dlc-panel">
+        <summary><span data-i18n="dlc.title">DLC y expansiones</span><span class="sub-sum" id="dlc-summary"></span></summary>
+        <div class="sub-body">
+          <p class="msg" data-i18n="dlc.hint">Añade expansiones de este juego. Sus horas se suman al total y sus precios a la inversión.</p>
+          <div class="dlc-form">
+            <label class="lbl dlc-title"><span data-i18n="dlc.name">Título de la expansión</span>
+              <input class="input" id="dlc-title" type="text" maxlength="120" autocomplete="off" data-i18n-placeholder="dlc.namePlaceholder" placeholder="Ej. Shadow of the Erdtree">
+            </label>
+            <div class="dlc-row dlc-row-facts">
+              <label class="lbl"><span data-i18n="dlc.statusLabel">Estado</span>
+                <select class="input" id="dlc-status"></select>
+              </label>
+              <label class="lbl"><span data-i18n="dlc.hoursLabel">Horas jugadas</span>
+                <input class="input num" id="dlc-hours" type="number" min="0" step="0.5" inputmode="decimal" value="0">
+              </label>
+            </div>
+            <div class="dlc-row dlc-row-cost">
+              <label class="lbl dlc-price-field"><span data-i18n="editor.price">Precio / costo</span>
+                <input class="input num" id="dlc-price" type="number" min="0" step="0.01" inputmode="decimal" data-i18n-placeholder="editor.pricePlaceholder" placeholder="0.00" aria-label="Precio DLC">
+              </label>
+              <label class="lbl dlc-currency-field"><span data-i18n="editor.currencyAria">Moneda</span>
+                <select class="input price-currency" id="dlc-currency" data-i18n-aria="editor.currencyAria" aria-label="Moneda DLC"></select>
+              </label>
+              <div class="lbl free-field dlc-free-field"><span data-i18n="editor.freeLabel">Costo</span>
+                <label class="check-row"><input type="checkbox" id="dlc-free"><span data-i18n="editor.free">Gratis / Suscripción (0)</span></label>
+              </div>
+            </div>
+            <button class="btn primary dlc-add" id="dlc-add" type="button" data-i18n="dlc.add">+ Añadir DLC</button>
+          </div>
+          <div class="dlc-list" id="dlc-list"></div>
+        </div>
+      </details>
 
       <details class="subpanel full" id="sess-panel">
         <summary><span data-i18n="session.title">Sesiones de juego</span><span class="sub-sum" id="s-summary"></span></summary>
