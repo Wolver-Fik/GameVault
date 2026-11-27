@@ -30,9 +30,9 @@
       showStorageError({ detail: STORAGE.lastStorageError() });
     }
   })();
-  var CACHE_NAME = 'gamevault-v1.5.3';
-  var CACHE_VERSION = '1.5.3';
-  var RELOAD_FLAG = 'gv-cache-reload-v1.5.3';
+  var CACHE_NAME = 'gamevault-v1.5.4';
+  var CACHE_VERSION = '1.5.4';
+  var RELOAD_FLAG = 'gv-cache-reload-v1.5.4';
   /* GV-04: mismo tope que storage.js, usado por el formulario y por +1h. */
   var MAX_SESSIONS = (STORAGE && STORAGE.MAX_SESSIONS) || 500;
 
@@ -4232,7 +4232,7 @@
     navigator.serviceWorker.addEventListener('controllerchange', reloadClean);
     purgeOldCaches().then(function (purged) {
       /* La query fuerza al navegador a descargar el SW nuevo sin usar su HTTP cache. */
-      return navigator.serviceWorker.register('./sw.js?v=1.5.3', { scope: './' })
+      return navigator.serviceWorker.register('./sw.js?v=1.5.4', { scope: './' })
         .then(function (registration) {
           if (purged) setTimeout(reloadClean, 200);
           return registration.update();
