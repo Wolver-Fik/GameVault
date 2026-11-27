@@ -29,6 +29,8 @@ Your game collection, backlog and played hours in one place. GameVault is a free
 - **Custom collections:** build your own shelves, assign games to several of them and filter the library instantly.
 - **Random picker:** pick a pending game at random, optionally filtered by platform, and start playing with one tap.
 - **Backups:** copy/export JSON or CSV (including sessions, achievements and collections), replace the library from a saved backup, or reset all data to start fresh.
+- **Prices, currencies & DLCs:** record what you paid, the game currency, free titles and DLC with their own prices; JSON backups include `schemaVersion`, `appId`, the export date, prices and DLCs, and reject other apps' files safely.
+- **Lightweight library:** the grid renders 60 cards at a time with a "show more" button; console groups and session lists use expanders for smooth scrolling on mobile.
 - **PWA:** installable on iOS and Android with real PNG icons (180/192/512), web manifest, standalone display and a service worker (Network-First for HTML, offline cache for assets).
 
 ## Install / Instalar
@@ -85,6 +87,8 @@ Tu colección de videojuegos, tu backlog y las horas jugadas en un único lugar.
 - **Colecciones personalizadas:** crea tus propias estanterías, asigna juegos a varias y filtra la biblioteca al instante.
 - **Ruleta aleatoria:** elige un juego pendiente al azar, con filtro opcional por plataforma, y empieza a jugar con un toque.
 - **Copias de seguridad:** copia/exporta JSON o CSV (incluyendo sesiones, logros y colecciones), reemplaza la biblioteca desde una copia guardada o reinicia todos los datos para empezar de cero.
+- **Precios, monedas y DLC:** anota lo que pagaste, la moneda de cada juego, los títulos gratuitos y los DLC con su precio; el JSON incluye `schemaVersion`, `appId`, la fecha de exportación, precios y DLC, y rechaza copias de otra app sin dañar tus datos.
+- **Biblioteca ligera:** la cuadrícula muestra 60 tarjetas a la vez con un botón «Ver más»; las agrupaciones por consola y las sesiones usan desplegables para una navegación fluida en móvil.
 - **PWA:** instalable en iOS y Android con iconos PNG reales (180/192/512), manifiesto web, modo independiente y service worker (Network-First para HTML, caché sin conexión para recursos).
 
 ### Instalación

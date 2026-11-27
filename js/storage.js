@@ -574,7 +574,8 @@
   /* El sobre JSON conserva las colecciones; se aceptan backups planos (v1.2.x). */
   function exportJSON(games, collections) {
     return JSON.stringify({
-      app: 'GameVault', schemaVersion: SCHEMA_VERSION, version: 3,
+      app: 'GameVault', appId: 'gamevault', schemaVersion: SCHEMA_VERSION, version: 3,
+      exportDate: new Date().toISOString().slice(0, 10),
       exportedAt: new Date().toISOString(),
       mainCurrency: loadMainCurrency(),
       games: games,
@@ -590,6 +591,9 @@
     }
     var envelope = !Array.isArray(data);
     if (envelope && data.app && String(data.app).toLowerCase() !== 'gamevault') {
+      return { ok: false, msgText: 'Este respaldo pertenece a otra aplicación y no se importará.' };
+    }
+    if (envelope && data.appId && String(data.appId).toLowerCase() !== 'gamevault') {
       return { ok: false, msgText: 'Este respaldo pertenece a otra aplicación y no se importará.' };
     }
     if (envelope) {

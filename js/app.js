@@ -9,6 +9,13 @@
     if (!I || typeof I.t !== 'function') return String(key);
     try { return I.t(key, vars); } catch (e) { return String(key); }
   }
+  /* Etapa 3: etiqueta local de paginación y tope de tarjetas en la biblioteca. */
+  var MORE_LABELS = { es: 'Ver más', en: 'Show more', pt: 'Ver mais', fr: 'Voir plus', it: 'Mostra altro', de: 'Mehr anzeigen', ru: 'Показать ещё', ja: 'もっと見る' };
+  function moreLabel(n) {
+    var code = (I && I.lang && I.lang()) || 'en';
+    return (MORE_LABELS[code] || MORE_LABELS.en) + ' (' + n + ')';
+  }
+  var gridLimit = 60;
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
@@ -2362,7 +2369,10 @@
       $('grid').innerHTML = '<div class="empty" style="grid-column:1/-1"><b>' + esc(t('empty.filterTitle')) + '</b><span>' + esc(t('empty.filterText')) + '</span><button class="btn" type="button" data-clear>' + esc(t('empty.clearButton')) + '</button></div>';
       return;
     }
-    $('grid').innerHTML = list.map(cardHtml).join('');
+    var shown = list.slice(0, gridLimit);
+    var html = shown.map(cardHtml).join('');
+    if (list.length > shown.length) html += '<button class="btn grid-more" type="button" data-more-grid>' + esc(moreLabel(list.length - shown.length)) + '</button>';
+    $('grid').innerHTML = html;
   }
 
   /* Coleccion agrupada por consola dentro de la pestana "Mis Consolas". */
@@ -2380,14 +2390,16 @@
     }
     box.innerHTML = groups.map(function (grp) {
       var summary = esc(t('stats.platformDetail', { n: grp.games.length, h: fmtNum(grp.hours) }));
-      var items = grp.games.map(function (g) {
+      var cards = grp.games.map(function (g) {
         var st = SMAP[g.status] || SMAP.pendiente;
         return '<button class="console-game-item" type="button" data-open="' + esc(g.id) + '"' +
           ' aria-label="' + esc(t('card.editAria', { title: g.title })) + '">' +
           '<span class="dot" style="--c:' + st.color + '"></span>' +
           '<span class="t">' + esc(g.title) + '</span>' +
           '<span class="h num">' + fmtNum(g.hours) + ' h</span></button>';
-      }).join('');
+      });
+      var items = cards.slice(0, 30).join('') +
+        (cards.length > 30 ? '<details class="show-more"><summary class="btn sm">' + esc(moreLabel(cards.length - 30)) + '</summary>' + cards.slice(30).join('') + '</details>' : '');
       return '<div class="console-game-group">' +
         '<h3>' + esc(grp.label) + ' <span class="num">(' + summary + ')</span></h3>' +
         '<div class="console-game-list">' + items + '</div></div>';
@@ -2675,12 +2687,18 @@
     if (ss) ss.textContent = total ? t('session.count', { n: total, h: fmtNum(sum) }) : '';
     var box = $('s-list');
     if (box) {
-      box.innerHTML = editSessions.length ? editSessions.map(function (s) {
-        return '<div class="session-item"><span class="sd">' + esc(s.date) + '</span>' +
-          '<span class="sn">' + esc(s.note || '') + '</span>' +
-          '<span class="sh num">' + esc(fmtNum(s.minutes / 60)) + ' h</span>' +
-          '<button class="btn sm ghost" type="button" data-session="' + esc(s.id) + '" aria-label="' + esc(t('session.delete')) + '">×</button></div>';
-      }).join('') : '<span class="msg">' + esc(t('session.empty')) + '</span>';
+      if (!editSessions.length) box.innerHTML = '<span class="msg">' + esc(t('session.empty')) + '</span>';
+      else {
+        var cards = editSessions.map(function (s) {
+          return '<div class="session-item"><span class="sd">' + esc(s.date) + '</span>' +
+            '<span class="sn">' + esc(s.note || '') + '</span>' +
+            '<span class="sh num">' + esc(fmtNum(s.minutes / 60)) + ' h</span>' +
+            '<button class="btn sm ghost" type="button" data-session="' + esc(s.id) + '" aria-label="' + esc(t('session.delete')) + '">×</button></div>';
+        });
+        var first = cards.slice(0, 50).join('');
+        var rest = cards.slice(50).join('');
+        box.innerHTML = first + (rest ? '<details class="show-more"><summary class="btn sm">' + esc(moreLabel(cards.length - 50)) + '</summary>' + rest + '</details>' : '');
+      }
     }
     var p = achPct(editAch);
     var ap = $('ach-progress');
@@ -4031,6 +4049,7 @@
 
   document.addEventListener('click', function (e) {
     var el;
+    if (closest(e.target, '[data-more-grid]')) { gridLimit += 60; renderGrid(); return; }
     if ((el = closest(e.target, '[data-view]'))) { setView(el.getAttribute('data-view')); return; }
     if ((el = closest(e.target, '[data-st]'))) { state.f.status = el.getAttribute('data-st'); renderAll(); return; }
     if ((el = closest(e.target, '[data-hour]'))) { logHour(el.getAttribute('data-hour')); return; }
